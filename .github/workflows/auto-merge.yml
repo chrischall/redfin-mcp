@@ -1,0 +1,56 @@
+name: Auto-merge PRs
+
+# Source-aware auto-merge:
+#
+#  - dependabot[bot] PRs: arm `--auto --squash` as soon as the PR is non-
+#    draft. Merges when CI is green; no review gating.
+#  - Same-repo (non-fork) PRs with the `ready-to-merge` label: arm
+#    `--auto --squash`. That label is added either:
+#      * by the owner manually (to override Claude's warn/fail), OR
+#      * automatically by pr-auto-review.yml when Claude's verdict =
+#        `pass` on a same-repo PR, OR
+#      * automatically by release-please.yml on the release PR.
+#  - Fork PRs: never auto-armed.
+#
+# RELEASE_PAT (not GITHUB_TOKEN) is used to arm `gh pr merge --auto`.
+# GitHub suppresses workflow runs for events triggered by GITHUB_TOKEN.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  arm-dependabot:
+    runs-on: ubuntu-latest
+    if: |
+      github.event.action != 'labeled' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: Arm auto-merge for dependabot
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
+
+  arm-on-ready-label:
+    runs-on: ubuntu-latest
+    if: |
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'ready-to-merge' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Arm auto-merge on ready-to-merge label
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"

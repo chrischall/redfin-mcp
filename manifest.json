@@ -1,0 +1,62 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/dxt/main/dist/mcpb-manifest.schema.json",
+  "manifest_version": "0.3",
+  "name": "redfin-mcp",
+  "display_name": "Redfin",
+  "version": "0.1.0",
+  "description": "Redfin real-estate access for Claude \u2014 search listings, fetch property details, market reports, saved homes",
+  "author": {
+    "name": "Chris Chall",
+    "email": "chris.c.hall@gmail.com",
+    "url": "https://github.com/chrischall"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chrischall/redfin-mcp"
+  },
+  "homepage": "https://github.com/chrischall/redfin-mcp",
+  "support": "https://github.com/chrischall/redfin-mcp/issues",
+  "license": "MIT",
+  "keywords": [
+    "redfin",
+    "real-estate",
+    "property",
+    "housing"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/bundle.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/dist/bundle.js"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "redfin_search_properties",
+      "description": "Search Redfin listings by location and optional filters"
+    },
+    {
+      "name": "redfin_get_property",
+      "description": "Fetch a property's full details by Redfin URL or property_id+listing_id"
+    },
+    {
+      "name": "redfin_get_market_report",
+      "description": "Market report for a Redfin region (median prices, days on market, YoY)"
+    },
+    {
+      "name": "redfin_get_saved_homes",
+      "description": "The signed-in user's favorited homes"
+    },
+    {
+      "name": "redfin_get_saved_searches",
+      "description": "The signed-in user's saved searches"
+    },
+    {
+      "name": "redfin_calculate_mortgage",
+      "description": "Local PITI mortgage-payment calculator \u2014 no network"
+    }
+  ]
+}
