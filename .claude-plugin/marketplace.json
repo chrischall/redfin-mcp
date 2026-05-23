@@ -6,16 +6,16 @@
     "email": "chris.c.hall@gmail.com"
   },
   "metadata": {
-    "description": "MCP server for Redfin \u2014 search listings, fetch property details, market reports, saved homes. Routes through the user signed-in redfin.com tab via the fetchproxy browser extension to dodge bot detection.",
-    "version": "0.1.0"
+    "description": "MCP server for Redfin — search listings, fetch property details, market reports, saved homes. Routes through the user signed-in redfin.com tab via the fetchproxy browser extension to dodge bot detection.",
+    "version": "0.2.0"
   },
   "plugins": [
     {
       "name": "redfin-mcp",
       "displayName": "Redfin",
       "source": "./",
-      "description": "MCP server for Redfin \u2014 search listings, get property details, market reports, saved homes",
-      "version": "0.1.0",
+      "description": "MCP server for Redfin — search listings, get property details, market reports, saved homes",
+      "version": "0.2.0",
       "author": {
         "name": "Chris Hall"
       },
