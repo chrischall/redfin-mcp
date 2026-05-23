@@ -15,6 +15,28 @@ Redfin real-estate access as an MCP server for Claude — search listings, fetch
 | `redfin_get_saved_searches` | Your saved searches with region URLs and display text. | ✓ |
 | `redfin_calculate_mortgage` | Local PITI calculator — principal+interest, taxes, insurance, HOA, PMI (no network). | |
 
+## Acknowledgement of Terms
+
+By using this MCP server, you acknowledge and agree to the following:
+
+**1. This server accesses your own Redfin session.** Every request is dispatched through your own browser tab via the fetchproxy extension — your cookies, your TLS, your session. It does not — and cannot — access anyone else's account.
+
+**2. [Redfin's Terms of Use](https://www.redfin.com/about/terms-of-use) govern your use of this server**, just as they govern your direct use of redfin.com. The clauses most relevant here:
+
+> You may not automatedly crawl or query the Services for any purpose or by any means (including, without limitation, screen and database scraping, spiders, robots, crawlers and any other automated activity with the purpose of obtaining information from the Services) unless you have received prior express written permission from the applicable Redfin Company.
+
+And: *"You agree to keep your password confidential, not use others' accounts, nor permit others to use your account."*
+
+You are agreeing to those terms — read by the maintainer 2026-05-23 — every time you invoke a tool in this server. Redfin's terms prohibit automated crawling without written permission, and IDX listing data is licensed for personal, non-commercial use only.
+
+**3. Personal, non-commercial use only.** This project is not affiliated with, endorsed by, sponsored by, or in partnership with Redfin Corporation. It is a personal automation tool that calls the same `/stingray/...` endpoints redfin.com calls when you click around. Do not use it to bulk-extract listings, redistribute IDX data, train AI models, populate a competing real-estate product, or for any commercial purpose.
+
+**4. Stability is not guaranteed.** This server reads private internal endpoints (`/stingray/api/gis`, `/stingray/api/home/details/*`, `/stingray/api/region/.../offer-insights`, `/myredfin/*`) that Redfin may change without notice. It may break. It may stop working. That's by design — the surface is not theirs to maintain on our behalf.
+
+**5. You accept full responsibility** for any consequences of using this server in connection with your Redfin access — rate limiting, account suspension, IP blocks, AWS WAF challenges, or any enforcement action Redfin takes. If Redfin objects to your use, stop using this server.
+
+This section is the maintainer's good-faith summary of the terms — it is not legal advice and does not modify or supersede Redfin's actual ToU.
+
 ## Install
 
 ### Option A — npx (after first publish)
