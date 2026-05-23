@@ -22,7 +22,7 @@ import { registerSavedTools } from './tools/saved.js';
 import { registerMarketTools } from './tools/market.js';
 import { registerMortgageTools } from './tools/mortgage.js';
 
-const VERSION = '0.1.0'; // x-release-please-version
+const VERSION = '0.2.0'; // x-release-please-version
 
 const port = process.env.REDFIN_WS_PORT
   ? Number(process.env.REDFIN_WS_PORT)

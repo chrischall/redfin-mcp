@@ -3,8 +3,8 @@
   "manifest_version": "0.3",
   "name": "redfin-mcp",
   "display_name": "Redfin",
-  "version": "0.1.0",
-  "description": "Redfin real-estate access for Claude \u2014 search listings, fetch property details, market reports, saved homes",
+  "version": "0.2.0",
+  "description": "Redfin real-estate access for Claude — search listings, fetch property details, market reports, saved homes",
   "author": {
     "name": "Chris Chall",
     "email": "chris.c.hall@gmail.com",
@@ -56,7 +56,7 @@
     },
     {
       "name": "redfin_calculate_mortgage",
-      "description": "Local PITI mortgage-payment calculator \u2014 no network"
+      "description": "Local PITI mortgage-payment calculator — no network"
     }
   ]
 }

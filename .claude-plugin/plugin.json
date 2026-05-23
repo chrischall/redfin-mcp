@@ -1,8 +1,8 @@
 {
   "name": "redfin-mcp",
   "displayName": "Redfin",
-  "version": "0.1.0",
-  "description": "Redfin real-estate access for Claude \u2014 search listings, get property details, market reports, your saved homes",
+  "version": "0.2.0",
+  "description": "Redfin real-estate access for Claude — search listings, get property details, market reports, your saved homes",
   "author": {
     "name": "Chris Hall",
     "email": "chris.c.hall@gmail.com"
