@@ -4,9 +4,9 @@ Guidance for Claude working in this repo.
 
 ## TL;DR
 
-v0.1.0: Redfin MCP server. Default and only transport: localhost WebSocket via [`@fetchproxy/server`](https://github.com/chrischall/fetchproxy) — the companion browser extension is installed separately rather than embedded. Every HTTP call to redfin.com is dispatched through the user's signed-in Chrome tab, so AWS WAF / DataDome see a real browser fetch, not us directly.
+v0.1.0: Redfin MCP server. Default and only transport: localhost WebSocket via [`@fetchproxy/server`](https://github.com/chrischall/fetchproxy) — the companion browser extension is installed separately rather than embedded. Every HTTP call to redfin.com is dispatched through the user's signed-in Chrome tab — each request rides their existing session (cookies, TLS, JS context) exactly as if they'd clicked it themselves.
 
-This is a "Pattern A" fetchproxy MCP (every call through fetchproxy), not "Pattern B" (one bootstrap call then direct fetch). Redfin's bot wall checks each request.
+This is a "Pattern A" fetchproxy MCP (every call rides through fetchproxy), not "Pattern B" (one bootstrap call then direct fetch). Redfin validates each request at the session level, so the in-session routing has to be per-call.
 
 ## Tool surface
 
@@ -148,11 +148,21 @@ For every PR, apply exactly one label:
 | *(none / unmatched)*   | Other Changes            |
 | `ignore-for-release`   | Hidden from notes        |
 
-Open with `gh pr create --label <label>`, then `gh pr merge <num> --auto --squash`. Repo allows squash-merge only — never `--merge`/`--rebase`.
+### How PRs merge
+
+**Do not manually merge PRs — including the release-please release PR.** Open with `gh pr create --label <label>` (or `--label ignore-for-release` for chores not worth a release-notes line). That is the whole job. Do **not** run `gh pr merge --auto --squash` yourself.
+
+The automation handles the rest:
+
+1. `pr-auto-review.yml` runs a Claude review on every PR. On a `pass` verdict it adds the `ready-to-merge` label.
+2. `release-please.yml` adds the `ready-to-merge` label to its own release PR automatically.
+3. `auto-merge.yml`, on the `ready-to-merge` label (or on a dependabot PR), arms `gh pr merge --auto --squash` for you. The moment CI is green the PR squash-merges itself.
+
+If Claude's review verdict was `warn` or `fail` but you've decided to ship anyway, add the label yourself: `gh pr edit <num> --add-label ready-to-merge`. The repo allows squash-merge only — `--merge` and `--rebase` are blocked at the branch-protection ruleset level.
 
 ## What to not do
 
-- Don't add IP-rotation / TLS-impersonation tricks. v0.1's whole design is "the fetchproxy bridge is the bot-bypass strategy." Adding cycletls / curl-impersonate / Playwright is duplicate engineering and won't beat AWS WAF anyway.
+- Don't add IP-rotation or TLS-impersonation libraries. The whole design is "every request rides the user's own browser session via fetchproxy." Adding cycletls / curl-impersonate / Playwright would replace that with a separate stand-in identity — which both defeats the design and adds engineering surface.
 - Don't paste cookies or env-configure auth. Auth lives in the browser.
 - Don't register tools that can't be tested against a mock `RedfinClient`. All tool logic should be behind `fetchHtml` / `fetchStingrayJson` so tests can drive it without a real WS.
 - Don't parse `/stingray/...` responses with anything other than `fetchStingrayJson`. The `{}&&` prefix and envelope check matter.
