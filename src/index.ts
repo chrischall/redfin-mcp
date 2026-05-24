@@ -27,7 +27,7 @@ import { registerClimateTools } from './tools/climate.js';
 import { registerRentalsTools } from './tools/rentals.js';
 import { registerAffordabilityTools } from './tools/affordability.js';
 
-const VERSION = '0.2.1'; // x-release-please-version
+const VERSION = '0.3.0'; // x-release-please-version
 
 const port = process.env.REDFIN_WS_PORT
   ? Number(process.env.REDFIN_WS_PORT)
