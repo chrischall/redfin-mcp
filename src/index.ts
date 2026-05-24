@@ -21,6 +21,11 @@ import { registerPropertyTools } from './tools/properties.js';
 import { registerSavedTools } from './tools/saved.js';
 import { registerMarketTools } from './tools/market.js';
 import { registerMortgageTools } from './tools/mortgage.js';
+import { registerHistoryTools } from './tools/history.js';
+import { registerCompareTools } from './tools/compare.js';
+import { registerClimateTools } from './tools/climate.js';
+import { registerRentalsTools } from './tools/rentals.js';
+import { registerAffordabilityTools } from './tools/affordability.js';
 
 const VERSION = '0.2.1'; // x-release-please-version
 
@@ -40,6 +45,11 @@ registerPropertyTools(server, client);
 registerSavedTools(server, client);
 registerMarketTools(server, client);
 registerMortgageTools(server);
+registerHistoryTools(server, client);
+registerCompareTools(server, client);
+registerClimateTools(server, client);
+registerRentalsTools(server, client);
+registerAffordabilityTools(server);
 
 console.error(
   `[redfin-mcp] v${VERSION} — WebSocket bridge via @fetchproxy/server on 127.0.0.1:${port ?? 37149}. ` +
