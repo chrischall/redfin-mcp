@@ -4,6 +4,7 @@ import {
   extractFavoritePropertyIds,
   extractSavedSearches,
   formatHomeCard,
+  parseAvailablePhotos,
   registerSavedTools,
 } from '../../src/tools/saved.js';
 import { createTestHarness, parseToolResult } from '../helpers.js';
@@ -78,6 +79,49 @@ describe('formatHomeCard', () => {
   it('synthesizes a fallback URL when commonHomeData.url is missing', () => {
     const out = formatHomeCard({ propertyId: 7 });
     expect(out?.url).toBe('https://www.redfin.com/home/7');
+  });
+
+  it('builds image_url + thumbnail_url + photo_count from mlsId/dataSourceId/availablePhotos', () => {
+    const out = formatHomeCard({
+      propertyId: 1,
+      commonHomeData: {
+        url: '/x/home/1',
+        mlsId: '2111124202183295849',
+        dataSourceId: 641,
+        availablePhotos: '0-20:0',
+      },
+    });
+    expect(out?.image_url).toBe(
+      'https://ssl.cdn-redfin.com/photo/641/bigphoto/849/2111124202183295849_0.jpg'
+    );
+    expect(out?.thumbnail_url).toBe(
+      'https://ssl.cdn-redfin.com/photo/641/mbphotov3/849/genMid.2111124202183295849_0_0.jpg'
+    );
+    expect(out?.photo_count).toBe(21);
+  });
+
+  it('omits image_url when mlsId or dataSourceId is absent', () => {
+    const out = formatHomeCard({
+      propertyId: 1,
+      commonHomeData: { dataSourceId: 641 },
+    });
+    expect(out?.image_url).toBeUndefined();
+    expect(out?.thumbnail_url).toBeUndefined();
+  });
+});
+
+describe('parseAvailablePhotos', () => {
+  it('parses an inclusive range string into a total count', () => {
+    expect(parseAvailablePhotos('0-20:0')).toBe(21);
+    expect(parseAvailablePhotos('0-0:0')).toBe(1);
+    expect(parseAvailablePhotos('5-9')).toBe(5);
+  });
+
+  it('returns undefined for missing or malformed input', () => {
+    expect(parseAvailablePhotos(undefined)).toBeUndefined();
+    expect(parseAvailablePhotos('')).toBeUndefined();
+    expect(parseAvailablePhotos('garbage')).toBeUndefined();
+    expect(parseAvailablePhotos('10-5:0')).toBeUndefined();
   });
 });
 

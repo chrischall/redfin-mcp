@@ -26,6 +26,7 @@ import { registerCompareTools } from './tools/compare.js';
 import { registerClimateTools } from './tools/climate.js';
 import { registerRentalsTools } from './tools/rentals.js';
 import { registerAffordabilityTools } from './tools/affordability.js';
+import { registerPhotosTools } from './tools/photos.js';
 
 const VERSION = '0.3.0'; // x-release-please-version
 
@@ -50,6 +51,7 @@ registerCompareTools(server, client);
 registerClimateTools(server, client);
 registerRentalsTools(server, client);
 registerAffordabilityTools(server);
+registerPhotosTools(server, client);
 
 console.error(
   `[redfin-mcp] v${VERSION} — WebSocket bridge via @fetchproxy/server on 127.0.0.1:${port ?? 37149}. ` +
