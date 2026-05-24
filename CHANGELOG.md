@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/chrischall/redfin-mcp/compare/v0.4.1...v0.4.2) (2026-05-24)
+
+
+### Documentation
+
+* canonical auto-merge guidance + softer fetchproxy framing ([#14](https://github.com/chrischall/redfin-mcp/issues/14)) ([789e113](https://github.com/chrischall/redfin-mcp/commit/789e11315f5fb89b3a2483f15df5d9b96f6304cb))
+
 ## [0.4.1](https://github.com/chrischall/redfin-mcp/compare/v0.4.0...v0.4.1) (2026-05-24)
 
 
