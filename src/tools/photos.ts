@@ -74,6 +74,14 @@ export function redfinPhotoLast3(mlsId: string | number): string {
  * bundle). The `size` arg selects between Redfin's two file
  * conventions; `big` (default) maps to the gallery hero, `mid` to the
  * mbphotov3 mid-size thumbnail.
+ *
+ * The CDN's per-index suffix convention is asymmetric:
+ *   - index 0 → `<mlsId>_0.jpg`        (single `_0`)
+ *   - index N → `<mlsId>_<N>_0.jpg`    (double `_0`)
+ *
+ * Verified live 2026-05-23: photo[0] is `2111124202183295849_0.jpg` but
+ * photo[5] is `2111124202183295849_5_0.jpg`. Both `bigphoto/` and
+ * `mbphotov3/` follow this pattern.
  */
 export function redfinPhotoUrl(args: {
   dataSourceId: number;
@@ -84,10 +92,11 @@ export function redfinPhotoUrl(args: {
   const idx = args.index ?? 0;
   const last3 = redfinPhotoLast3(args.mlsId);
   const mls = String(args.mlsId);
+  const suffix = idx === 0 ? '0' : `${idx}_0`;
   if (args.size === 'mid') {
-    return `https://ssl.cdn-redfin.com/photo/${args.dataSourceId}/mbphotov3/${last3}/genMid.${mls}_${idx}_0.jpg`;
+    return `https://ssl.cdn-redfin.com/photo/${args.dataSourceId}/mbphotov3/${last3}/genMid.${mls}_${suffix}.jpg`;
   }
-  return `https://ssl.cdn-redfin.com/photo/${args.dataSourceId}/bigphoto/${last3}/${mls}_${idx}.jpg`;
+  return `https://ssl.cdn-redfin.com/photo/${args.dataSourceId}/bigphoto/${last3}/${mls}_${suffix}.jpg`;
 }
 
 export function formatPhoto(p: MediaPhoto): FormattedPhoto | null {
