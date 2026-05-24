@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
+import { redfinPhotoUrl } from './photos.js';
 
 /**
  * Signed-in-user surfaces. Both pages require an authenticated
@@ -35,6 +36,12 @@ export interface FormattedSavedHome {
   beds?: number;
   baths?: number;
   sqft?: number;
+  /** Primary photo URL constructed from mlsId + dataSourceId. */
+  image_url?: string;
+  /** Mid-size variant of the primary photo, useful for thumbnails. */
+  thumbnail_url?: string;
+  /** Total photos available, parsed from the `0-N:0` availablePhotos range. */
+  photo_count?: number;
   is_favorite?: boolean;
 }
 
@@ -55,6 +62,15 @@ interface HomeCardCommonData {
   beds?: number;
   baths?: number;
   sqFt?: { value?: number } | number;
+  /** Redfin MLS identifier — combined with dataSourceId to build CDN photo URLs. */
+  mlsId?: string | number;
+  /** Redfin data-source / MLS provider ID (e.g. 641 for one NY MLS). */
+  dataSourceId?: number;
+  /**
+   * Range of available photo indices, formatted "<lo>-<hi>:<unused>"
+   * (e.g. "0-20:0" → 21 photos at indices 0..20).
+   */
+  availablePhotos?: string;
 }
 
 interface HomeCard {
@@ -89,6 +105,20 @@ function unwrap<T>(x: T | { value?: T } | undefined): T | undefined {
   return x as T;
 }
 
+/**
+ * Parse the `availablePhotos` range string (e.g. "0-20:0") into a total
+ * photo count. Returns undefined when the field is missing or unparseable.
+ */
+export function parseAvailablePhotos(s: string | undefined): number | undefined {
+  if (!s) return undefined;
+  const m = /^(\d+)-(\d+)(?::|$)/.exec(s);
+  if (!m) return undefined;
+  const lo = parseInt(m[1], 10);
+  const hi = parseInt(m[2], 10);
+  if (Number.isNaN(lo) || Number.isNaN(hi) || hi < lo) return undefined;
+  return hi - lo + 1;
+}
+
 export function formatHomeCard(hc: HomeCard): FormattedSavedHome | null {
   if (!hc.propertyId) return null;
   const c = hc.commonHomeData ?? {};
@@ -97,6 +127,26 @@ export function formatHomeCard(hc: HomeCard): FormattedSavedHome | null {
       ? c.url
       : `https://www.redfin.com${c.url}`
     : `https://www.redfin.com/home/${hc.propertyId}`;
+  // Build CDN photo URLs when we have both ID handles. Redfin's
+  // homecards endpoint omits a photoUrls bundle, but the
+  // (dataSourceId, mlsId) pair is the canonical handle into their
+  // photo CDN.
+  let image_url: string | undefined;
+  let thumbnail_url: string | undefined;
+  if (c.mlsId !== undefined && c.mlsId !== '' && typeof c.dataSourceId === 'number') {
+    image_url = redfinPhotoUrl({
+      dataSourceId: c.dataSourceId,
+      mlsId: c.mlsId,
+      index: 0,
+      size: 'big',
+    });
+    thumbnail_url = redfinPhotoUrl({
+      dataSourceId: c.dataSourceId,
+      mlsId: c.mlsId,
+      index: 0,
+      size: 'mid',
+    });
+  }
   return {
     property_id: hc.propertyId,
     url,
@@ -109,6 +159,9 @@ export function formatHomeCard(hc: HomeCard): FormattedSavedHome | null {
     beds: c.beds,
     baths: c.baths,
     sqft: unwrap(c.sqFt),
+    image_url,
+    thumbnail_url,
+    photo_count: parseAvailablePhotos(c.availablePhotos),
     is_favorite: hc.isFavorite,
   };
 }
