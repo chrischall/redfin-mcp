@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1](https://github.com/chrischall/redfin-mcp/compare/v0.4.0...v0.4.1) (2026-05-24)
+
+
+### Bug Fixes
+
+* **history:** align with live belowTheFold shape (3 field mismatches) ([#12](https://github.com/chrischall/redfin-mcp/issues/12)) ([660363a](https://github.com/chrischall/redfin-mcp/commit/660363a46252605211984610aab0fd1eee793400))
+* **market+search:** switch to market-trends endpoint + detect gis fallback ([#13](https://github.com/chrischall/redfin-mcp/issues/13)) ([9abe53c](https://github.com/chrischall/redfin-mcp/commit/9abe53c77b9f15440a9883a92a3b33095e6d554f))
+* **photos:** omit per-photo source lists by default ([#10](https://github.com/chrischall/redfin-mcp/issues/10)) ([c943ad9](https://github.com/chrischall/redfin-mcp/commit/c943ad97b2fbbc81fb4e65f0f097324b6104ce2a))
+
 ## [0.4.0](https://github.com/chrischall/redfin-mcp/compare/v0.3.0...v0.4.0) (2026-05-24)
 
 

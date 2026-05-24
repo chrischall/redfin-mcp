@@ -3,7 +3,7 @@
   "manifest_version": "0.3",
   "name": "redfin-mcp",
   "display_name": "Redfin",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Redfin real-estate access for Claude — search listings, fetch property details, market reports, saved homes",
   "author": {
     "name": "Chris Chall",
