@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import type { RedfinClient } from '../../src/client.js';
 import {
+  assertRegionMatches,
   buildGisPath,
   formatHome,
   registerSearchTools,
@@ -124,6 +125,46 @@ describe('buildGisPath', () => {
   });
 });
 
+describe('assertRegionMatches', () => {
+  const region = {
+    name: 'New York',
+    sub_name: 'New York, NY, USA',
+    region_id: 30749,
+    region_type: 2,
+  };
+
+  it('passes when serviceRegionName shares a non-trivial token with the requested name', () => {
+    expect(() =>
+      assertRegionMatches(region, 'new-york-east')
+    ).not.toThrow();
+  });
+
+  it('passes when serviceRegionName is missing (defensive — never false-alarm)', () => {
+    expect(() => assertRegionMatches(region, undefined)).not.toThrow();
+  });
+
+  it('throws when serviceRegionName is unrelated (Brooklyn → Seattle fallback)', () => {
+    expect(() =>
+      assertRegionMatches(
+        {
+          name: 'Brooklyn',
+          sub_name: 'New York, NY, USA',
+          region_id: 219258,
+          region_type: 6,
+        },
+        'arbor-heights' // Seattle neighborhood — gis fell back
+      )
+    ).toThrow(/doesn't fully support this region/i);
+  });
+
+  it('ignores noise state/country tokens (ny, usa) when matching', () => {
+    // Without the noise filter, "ny, usa" would falsely match many regions.
+    expect(() =>
+      assertRegionMatches(region, 'ny-usa-something-else')
+    ).toThrow();
+  });
+});
+
 describe('redfin_search_properties tool', () => {
   it('setup', async () => {
     harness = await createTestHarness((server) =>
@@ -155,6 +196,7 @@ describe('redfin_search_properties tool', () => {
       .mockResolvedValueOnce({
         resultCode: 0,
         payload: {
+          serviceRegionName: 'new-york-city',
           homes: [
             {
               propertyId: 1,
@@ -229,6 +271,7 @@ describe('redfin_search_properties tool', () => {
       .mockResolvedValueOnce({
         resultCode: 0,
         payload: {
+          serviceRegionName: 'x',
           homes: Array.from({ length: 10 }, (_, i) => ({ propertyId: i + 1 })),
         },
       });
@@ -238,5 +281,44 @@ describe('redfin_search_properties tool', () => {
     });
     const parsed = parseToolResult<{ results: unknown[] }>(result);
     expect(parsed.results).toHaveLength(3);
+  });
+
+  it('throws a helpful error when gis falls back to an unrelated region', async () => {
+    // The Brooklyn neighborhood (6_219258) case in production: autocomplete
+    // resolves correctly, gis returns Seattle ("arbor-heights").
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          sections: [
+            {
+              name: 'Places',
+              rows: [
+                {
+                  id: '6_219258',
+                  name: 'Brooklyn',
+                  subName: 'New York, NY, USA',
+                  url: '/neighborhood/219258/NY/New-York/Brooklyn',
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          serviceRegionName: 'arbor-heights',
+          homes: [{ propertyId: 99, city: 'Seattle', state: 'WA' }],
+        },
+      });
+
+    const result = await harness.callTool('redfin_search_properties', {
+      location: 'Brooklyn, NY',
+    });
+    expect(result.isError).toBeTruthy();
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toMatch(/doesn't fully support this region/i);
+    expect(text).toMatch(/region_id \+ region_type directly/);
   });
 });
