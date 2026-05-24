@@ -24,7 +24,7 @@ describe('formatPriceEvent', () => {
       formatPriceEvent({
         eventDescription: 'Listed',
         eventDate: Date.parse('2024-05-15'),
-        price: { amount: 850000 },
+        price: 850000,
         daysOnMarket: 12,
         source: 'NYSE-MLS',
         sourceId: '12345',
@@ -42,14 +42,26 @@ describe('formatPriceEvent', () => {
   it('leaves date undefined when eventDate is absent', () => {
     expect(formatPriceEvent({ eventDescription: 'X' }).date).toBeUndefined();
   });
+
+  it('leaves price undefined when the event has no numeric price', () => {
+    // Admin-only or private-listing events arrive without a price.
+    expect(
+      formatPriceEvent({
+        eventDescription: 'Listed',
+        eventDate: Date.parse('2024-01-01'),
+      }).price
+    ).toBeUndefined();
+  });
 });
 
 describe('formatTaxEvent', () => {
   it('sums land + improvement for total assessed value', () => {
+    // Field name is `taxesDue` in the live API, even though our public
+    // shape calls it `taxes_paid` (Redfin's UI labels it "taxes" plain).
     expect(
       formatTaxEvent({
         rollYear: 2024,
-        taxesPaid: 12000,
+        taxesDue: 12000,
         taxableLandValue: 300000,
         taxableImprovementValue: 550000,
       })
@@ -63,7 +75,7 @@ describe('formatTaxEvent', () => {
   });
 
   it('returns total_assessed_value undefined when both components missing', () => {
-    expect(formatTaxEvent({ rollYear: 2020, taxesPaid: 5000 }).total_assessed_value).toBeUndefined();
+    expect(formatTaxEvent({ rollYear: 2020, taxesDue: 5000 }).total_assessed_value).toBeUndefined();
   });
 });
 
@@ -90,18 +102,18 @@ describe('redfin_get_price_history tool', () => {
               {
                 eventDescription: 'Listed',
                 eventDate: Date.parse('2024-01-01'),
-                price: { amount: 500_000 },
+                price: 500_000,
               },
               {
                 eventDescription: 'Sold',
                 eventDate: Date.parse('2020-06-01'),
-                price: { amount: 380_000 },
+                price: 380_000,
               },
             ],
           },
           publicRecordsInfo: {
-            taxHistory: [
-              { rollYear: 2024, taxesPaid: 9000, taxableLandValue: 200_000, taxableImprovementValue: 350_000 },
+            allTaxInfo: [
+              { rollYear: 2024, taxesDue: 9000, taxableLandValue: 200_000, taxableImprovementValue: 350_000 },
             ],
           },
         },

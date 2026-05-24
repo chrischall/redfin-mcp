@@ -6,11 +6,18 @@ import { resolveIds } from './properties.js';
 
 /**
  * Redfin's price + tax history lives in the `belowTheFold` endpoint,
- * under `propertyHistoryInfo.events[]` and `publicRecordsInfo.taxHistory[]`.
+ * under `propertyHistoryInfo.events[]` and `publicRecordsInfo.allTaxInfo[]`.
  *
- * Verified live 2026-05-23 — `belowTheFold` returns payload keys
- * including amenitiesInfo, publicRecordsInfo, propertyHistoryInfo,
- * buyingPowerInfo.
+ * Field-shape gotchas (verified live 2026-05-23 against
+ * /WA/Seattle/9243-35th-Ave-SW-98126/unit-C/home/18659204):
+ *
+ *   - `event.price` is a plain number, not `{amount}` — the Apollo
+ *     cache wrapper used elsewhere isn't applied here.
+ *   - The tax-history array is `allTaxInfo`, not `taxHistory`. The
+ *     `taxInfo` (no `all-`) field is just the current-year roll.
+ *   - Tax records use `taxesDue`, not `taxesPaid` — Redfin shows it
+ *     as taxes assessed against the property, billed but not necessarily
+ *     paid.
  */
 
 interface PropertyHistoryEvent {
@@ -20,7 +27,7 @@ interface PropertyHistoryEvent {
   dataSourceId?: number;
   eventDate?: number; // unix ms
   daysOnMarket?: number;
-  price?: { amount?: number; level?: number };
+  price?: number;
   priceDisplayLevel?: number;
   isPriceTransparent?: boolean;
 }
@@ -33,14 +40,14 @@ interface PropertyHistoryInfo {
 
 interface PublicRecordsTaxEvent {
   rollYear?: number;
-  taxesPaid?: number;
+  taxesDue?: number;
   taxableLandValue?: number;
   taxableImprovementValue?: number;
 }
 
 interface PublicRecordsInfo {
   taxInfo?: { taxesDue?: number; rollYear?: number };
-  taxHistory?: PublicRecordsTaxEvent[];
+  allTaxInfo?: PublicRecordsTaxEvent[];
   basicInfo?: { yearBuilt?: number; sqFtFinished?: number };
 }
 
@@ -73,7 +80,7 @@ export function formatPriceEvent(raw: PropertyHistoryEvent): FormattedPriceEvent
         ? new Date(raw.eventDate).toISOString().slice(0, 10)
         : undefined,
     event: raw.eventDescription,
-    price: raw.price?.amount,
+    price: typeof raw.price === 'number' ? raw.price : undefined,
     days_on_market: raw.daysOnMarket,
     source: raw.source,
     source_id: raw.sourceId,
@@ -89,7 +96,7 @@ export function formatTaxEvent(raw: PublicRecordsTaxEvent): FormattedTaxEvent {
       : undefined;
   return {
     year: raw.rollYear,
-    taxes_paid: raw.taxesPaid,
+    taxes_paid: raw.taxesDue,
     land_value: land,
     improvement_value: imp,
     total_assessed_value: total,
@@ -143,7 +150,7 @@ export function registerHistoryTools(
       const priceEvents = (payload?.propertyHistoryInfo?.events ?? []).map(
         formatPriceEvent
       );
-      const taxEvents = (payload?.publicRecordsInfo?.taxHistory ?? []).map(
+      const taxEvents = (payload?.publicRecordsInfo?.allTaxInfo ?? []).map(
         formatTaxEvent
       );
       return textResult({
