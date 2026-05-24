@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/chrischall/redfin-mcp/compare/v0.3.0...v0.4.0) (2026-05-24)
+
+
+### Features
+
+* property photo gallery + saved-home images ([#8](https://github.com/chrischall/redfin-mcp/issues/8)) ([2abbf59](https://github.com/chrischall/redfin-mcp/commit/2abbf596598957544fb940277d905b2e4edb6ca9))
+
 ## [0.3.0](https://github.com/chrischall/redfin-mcp/compare/v0.2.1...v0.3.0) (2026-05-24)
 
 
