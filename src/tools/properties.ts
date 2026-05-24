@@ -24,13 +24,65 @@ import { urlToPath } from '../url.js';
  * Both verified live 2026-05-23.
  */
 
-interface InitialInfoPayload {
+export interface InitialInfoPayload {
   propertyId?: number;
   listingId?: number;
   marketId?: number;
   mlsId?: { value?: string } | string;
   latLong?: { value?: { latitude?: number; longitude?: number } };
   marketName?: string;
+}
+
+export interface ResolvedIds {
+  propertyId: number;
+  listingId: number;
+  canonicalUrl: string;
+  /** initialInfo payload when the URL path was the entry — otherwise null. */
+  initial: InitialInfoPayload | null;
+}
+
+/**
+ * Resolve property_id + listing_id from either form of caller input.
+ * Shared by `redfin_get_property` and the v0.3 tools (compare,
+ * price-history, climate-risk, comparable-rentals).
+ */
+export async function resolveIds(
+  client: RedfinClient,
+  args: { url?: string; property_id?: number; listing_id?: number }
+): Promise<ResolvedIds> {
+  if (args.property_id && args.listing_id) {
+    return {
+      propertyId: args.property_id,
+      listingId: args.listing_id,
+      canonicalUrl: args.url
+        ? args.url.startsWith('http')
+          ? args.url
+          : `https://www.redfin.com${urlToPath(args.url)}`
+        : `https://www.redfin.com/home/${args.property_id}`,
+      initial: null,
+    };
+  }
+  if (!args.url) {
+    throw new Error('provide either url, or both property_id + listing_id');
+  }
+  const path = urlToPath(args.url);
+  const env = await client.fetchStingrayJson<InitialInfoPayload>(
+    `/stingray/api/home/details/initialInfo?path=${encodeURIComponent(path)}`
+  );
+  const initial = env.payload ?? null;
+  if (!initial?.propertyId || !initial?.listingId) {
+    throw new Error(
+      `initialInfo did not return propertyId+listingId for ${args.url}`
+    );
+  }
+  return {
+    propertyId: initial.propertyId,
+    listingId: initial.listingId,
+    canonicalUrl: args.url.startsWith('http')
+      ? args.url
+      : `https://www.redfin.com${path}`,
+    initial,
+  };
 }
 
 interface AddressSectionInfo {
@@ -60,7 +112,7 @@ interface MediaBrowserInfo {
   }>;
 }
 
-interface AboveTheFoldPayload {
+export interface AboveTheFoldPayload {
   addressSectionInfo?: AddressSectionInfo;
   mediaBrowserInfo?: MediaBrowserInfo;
 }
