@@ -167,6 +167,54 @@ export interface SearchInput {
 }
 
 /**
+ * Tokenize a label into lowercase alpha words for fuzzy matching.
+ * "North Brooklyn" → ["north", "brooklyn"]. "arbor-heights" → ["arbor", "heights"].
+ */
+function tokens(s: string | undefined): string[] {
+  if (!s) return [];
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/**
+ * Throw if the gis call's `serviceRegionName` doesn't share at least one
+ * non-trivial word with the requested region's name or sub-name. This
+ * catches the silent-fallback failure mode where gis ignores
+ * neighborhood-typed region IDs and returns the user's default service
+ * region.
+ *
+ * Skipped when serviceRegionName is missing (defensive — we don't want
+ * to false-alarm on a Redfin shape change).
+ */
+export function assertRegionMatches(
+  region: { name: string; sub_name?: string; region_type: number; region_id: number },
+  serviceRegionName: string | undefined
+): void {
+  if (!serviceRegionName) return;
+  const wanted = new Set([...tokens(region.name), ...tokens(region.sub_name)]);
+  const got = new Set(tokens(serviceRegionName));
+  // Strip generic state/country tokens that always match.
+  for (const noise of ['ny', 'usa', 'us', 'ca', 'wa', 'tx', 'fl']) {
+    wanted.delete(noise);
+    got.delete(noise);
+  }
+  for (const w of wanted) {
+    if (got.has(w)) return;
+  }
+  throw new Error(
+    `redfin_search_properties: Redfin's gis API doesn't fully support this region — ` +
+      `requested "${region.name}" (${region.region_type}_${region.region_id}) but the server ` +
+      `returned results for "${serviceRegionName}". This commonly happens with neighborhood-typed ` +
+      `regions in big cities. Try a parent city (e.g. "New York" instead of "Brooklyn"), or pass ` +
+      `region_id + region_type directly for a known-working pair.`
+  );
+}
+
+/**
  * Build the gis endpoint path + params for a resolved region + filters.
  */
 export function buildGisPath(
@@ -255,8 +303,17 @@ export function registerSearchTools(
         );
       }
       const path = buildGisPath(region, input);
-      const env = await client.fetchStingrayJson<{ homes?: RawHome[] }>(path);
+      const env = await client.fetchStingrayJson<{
+        homes?: RawHome[];
+        serviceRegionName?: string;
+      }>(path);
       const raw = env.payload?.homes ?? [];
+      // Sanity check: when gis can't handle the region (commonly true for
+      // type=6 neighborhoods in big cities), it silently falls back to the
+      // user's default service region and ignores filters. Detect this by
+      // comparing the returned `serviceRegionName` against the resolved
+      // region's name. If they're unrelated, raise rather than mislead.
+      assertRegionMatches(region, env.payload?.serviceRegionName);
       const limit = input.limit ?? 40;
       const formatted = raw
         .map(formatHome)
