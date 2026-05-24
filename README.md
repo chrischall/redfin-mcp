@@ -2,7 +2,7 @@
 
 Redfin real-estate access as an MCP server for Claude — search listings, fetch property details, market reports, and your saved homes/searches via natural language.
 
-> ⚠️ Redfin does not publish a public consumer API. This server uses the same private `/stingray/...` endpoints the redfin.com web app uses, routed through your own signed-in browser tab via the [fetchproxy](https://github.com/chrischall/fetchproxy) extension. AWS WAF + DataDome see a real browser session, not a Node process — but you should still treat this as informal use of Redfin's website. Use at your own discretion.
+> ⚠️ Redfin does not publish a public consumer API. This server uses the same private `/stingray/...` endpoints the redfin.com web app uses, routed through your own signed-in browser tab via the [fetchproxy](https://github.com/chrischall/fetchproxy) extension. Every request acts on behalf of your existing session — your cookies, your TLS, your JS context — exactly as if you'd clicked it in the browser yourself. Treat this as informal use of Redfin's website. Use at your own discretion.
 
 ## Tools
 
@@ -104,7 +104,7 @@ Open redfin.com and sign in. That's all the auth this server needs.
 └────────────────┘          └──────────────────┘        │  (separate)      │   cookies)    └─────────────┘
 ```
 
-The MCP server runs in Node, but every HTTP call to redfin.com is dispatched into your live browser tab through the fetchproxy extension. AWS WAF / DataDome see a real browser making a real request from a real session — TLS fingerprint, cookies, JS execution all match the page that's already on screen. No headless browser, no impersonation, no proxy farm.
+The MCP server runs in Node, but every HTTP call to redfin.com is dispatched into your live browser tab through the fetchproxy extension. Each request rides your existing session — TLS fingerprint, cookies, and JS execution context all match the page that's already on screen. No headless browser stand-in, no separate identity, no third-party proxy: just your real browser, acting on its own behalf, with the MCP server picking what to ask for.
 
 Redfin's `/stingray/...` JSON endpoints respond with a `{}&&` anti-CSRF prefix before the JSON body; the client strips it transparently.
 
