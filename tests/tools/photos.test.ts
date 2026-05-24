@@ -35,7 +35,7 @@ describe('redfinPhotoLast3', () => {
 });
 
 describe('redfinPhotoUrl', () => {
-  it('builds the canonical bigphoto primary URL (index 0)', () => {
+  it('builds the canonical bigphoto primary URL at index 0', () => {
     expect(
       redfinPhotoUrl({ dataSourceId: 641, mlsId: '2111124202183295849', index: 0 })
     ).toBe(
@@ -43,7 +43,30 @@ describe('redfinPhotoUrl', () => {
     );
   });
 
-  it('builds a mid-size genMid URL when size=mid', () => {
+  it('uses the double-_0 suffix for non-zero bigphoto indices', () => {
+    // Verified live: photo[5] is `<mls>_5_0.jpg`, not `<mls>_5.jpg`.
+    expect(
+      redfinPhotoUrl({ dataSourceId: 641, mlsId: '2111124202183295849', index: 5 })
+    ).toBe(
+      'https://ssl.cdn-redfin.com/photo/641/bigphoto/849/2111124202183295849_5_0.jpg'
+    );
+  });
+
+  it('builds the mbphotov3 mid-size URL at index 0 (single _0)', () => {
+    // Verified live: photo[0] is `genMid.<mls>_0.jpg`, NOT `genMid.<mls>_0_0.jpg`.
+    expect(
+      redfinPhotoUrl({
+        dataSourceId: 641,
+        mlsId: '2111124202183295849',
+        index: 0,
+        size: 'mid',
+      })
+    ).toBe(
+      'https://ssl.cdn-redfin.com/photo/641/mbphotov3/849/genMid.2111124202183295849_0.jpg'
+    );
+  });
+
+  it('builds the mbphotov3 mid-size URL at index N (double _0)', () => {
     expect(
       redfinPhotoUrl({
         dataSourceId: 641,

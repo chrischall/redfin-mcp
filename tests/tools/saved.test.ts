@@ -95,7 +95,7 @@ describe('formatHomeCard', () => {
       'https://ssl.cdn-redfin.com/photo/641/bigphoto/849/2111124202183295849_0.jpg'
     );
     expect(out?.thumbnail_url).toBe(
-      'https://ssl.cdn-redfin.com/photo/641/mbphotov3/849/genMid.2111124202183295849_0_0.jpg'
+      'https://ssl.cdn-redfin.com/photo/641/mbphotov3/849/genMid.2111124202183295849_0.jpg'
     );
     expect(out?.photo_count).toBe(21);
   });
