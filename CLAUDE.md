@@ -14,10 +14,16 @@ This is a "Pattern A" fetchproxy MCP (every call through fetchproxy), not "Patte
 | --- | --- | --- | --- |
 | `redfin_search_properties` | `tools/search.ts` | (a) `GET /stingray/do/location-autocomplete?location=…` → region<br>(b) `GET /stingray/api/gis?region_id=…&region_type=…&…` | read |
 | `redfin_get_property` | `tools/properties.ts` | (a) `GET /stingray/api/home/details/initialInfo?path=…` → propertyId+listingId<br>(b) `GET /stingray/api/home/details/aboveTheFold?propertyId=…&listingId=…` | read |
+| `redfin_get_property_photos` | `tools/photos.ts` | (a) optional `initialInfo` to resolve IDs<br>(b) `GET /stingray/api/home/details/aboveTheFold?…` (mediaBrowserInfo.photos[]) | read |
 | `redfin_get_market_report` | `tools/market.ts` | `GET /stingray/api/region/<region_type>/<region_id>/<property_type>/offer-insights` | read |
-| `redfin_get_saved_homes` | `tools/saved.ts` | (a) `GET /myredfin/favorites` HTML → regex propertyIds<br>(b) `GET /stingray/do/api/v3/favorites/homecards?b=<csv-ids>` | read (auth) |
+| `redfin_get_price_history` | `tools/history.ts` | `GET /stingray/api/home/details/belowTheFold?propertyId=…&listingId=…` | read |
+| `redfin_compare_properties` | `tools/compare.ts` | `GET /stingray/api/home/details/aboveTheFold?…` ×N (concurrent) | read |
+| `redfin_get_climate_risk` | `tools/climate.ts` | `GET /<homedetails-path>` HTML — extract `floodData`/`fireData`/`heatData` blocks | read |
+| `redfin_get_comparable_rentals` | `tools/rentals.ts` | `GET /stingray/api/home/comparable-rentals?propertyId=…&rentEstimateLow=…&rentEstimateHigh=…` | read |
+| `redfin_get_saved_homes` | `tools/saved.ts` | (a) `GET /myredfin/favorites` HTML → regex propertyIds<br>(b) `GET /stingray/do/api/v3/favorites/homecards?b=<csv-ids>` — image URLs constructed locally from mlsId+dataSourceId | read (auth) |
 | `redfin_get_saved_searches` | `tools/saved.ts` | `GET /myredfin/saved-searches` HTML → regex region URLs | read (auth) |
 | `redfin_calculate_mortgage` | `tools/mortgage.ts` | (local; no network) | read |
+| `redfin_calculate_affordability` | `tools/affordability.ts` | (local; no network) | read |
 
 All `/stingray/...` JSON responses begin with a `{}&&` anti-CSRF prefix; `RedfinClient.fetchStingrayJson` strips it. The two HTML-scraped tools (saved homes, saved searches) use regex extraction since Redfin's user-facing pages are React Server Components — there's no embedded `__NEXT_DATA__` blob like Zillow has.
 

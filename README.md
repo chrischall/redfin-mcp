@@ -10,8 +10,14 @@ Redfin real-estate access as an MCP server for Claude — search listings, fetch
 | --- | --- | :---: |
 | `redfin_search_properties` | Search listings by location, price band, beds/baths, home type. Resolves free-text via Redfin's autocomplete then queries the `gis` API. | |
 | `redfin_get_property` | Full record for a property by URL or `property_id`+`listing_id`. Address, beds/baths, sqft, year built, price, status, days on market, primary photo. | |
+| `redfin_get_property_photos` | Full photo gallery for a property — every CDN image at fullscreen/large/medium sizes plus thumbnails and captions. | |
 | `redfin_get_market_report` | Median sale/list prices, ZHVI YoY, average days on market, inventory for a region. | |
-| `redfin_get_saved_homes` | Your favorited homes — flattened across all collections. | ✓ |
+| `redfin_get_price_history` | Listing-history and tax-roll events for a property — Listed/Sold/Pending entries plus annual assessed values and taxes paid. | |
+| `redfin_compare_properties` | Side-by-side comparison of up to 12 properties: address, price, beds/baths, sqft, $/sqft, year built, status, days on market. Aligned summary table. | |
+| `redfin_get_climate_risk` | First Street Foundation flood / fire / heat risk factors for a property — FEMA zones, 30-year flood-chance series, insurance bands, cumulative-heat projections. | |
+| `redfin_get_comparable_rentals` | Comparable rentals near a property — monthly rent, beds/baths, sqft, distance. Used for rent estimation. | |
+| `redfin_calculate_affordability` | Local affordability calculator — back-of-envelope max purchase price from income + DTI + rates (no network). | |
+| `redfin_get_saved_homes` | Your favorited homes — flattened across all collections, with primary photo URLs constructed from each home's CDN handles. | ✓ |
 | `redfin_get_saved_searches` | Your saved searches with region URLs and display text. | ✓ |
 | `redfin_calculate_mortgage` | Local PITI calculator — principal+interest, taxes, insurance, HOA, PMI (no network). | |
 
