@@ -180,37 +180,84 @@ function tokens(s: string | undefined): string[] {
     .filter(Boolean);
 }
 
+// Two-letter US state codes we strip from the noise-token set; they
+// appear inside thousands of unrelated addresses and would turn any
+// silent fallback into a false-positive match.
+const NOISE_TOKENS = new Set([
+  'al', 'ak', 'az', 'ar', 'ca', 'co', 'ct', 'de', 'fl', 'ga', 'hi', 'id',
+  'il', 'in', 'ia', 'ks', 'ky', 'la', 'me', 'md', 'ma', 'mi', 'mn', 'ms',
+  'mo', 'mt', 'ne', 'nv', 'nh', 'nj', 'nm', 'ny', 'nc', 'nd', 'oh', 'ok',
+  'or', 'pa', 'ri', 'sc', 'sd', 'tn', 'tx', 'ut', 'vt', 'va', 'wa', 'wv',
+  'wi', 'wy', 'dc', 'pr', 'usa', 'us',
+]);
+
+function discriminatingTokens(s: string | undefined): Set<string> {
+  const out = new Set(tokens(s));
+  for (const n of NOISE_TOKENS) out.delete(n);
+  return out;
+}
+
 /**
- * Throw if the gis call's `serviceRegionName` doesn't share at least one
- * non-trivial word with the requested region's name or sub-name. This
- * catches the silent-fallback failure mode where gis ignores
- * neighborhood-typed region IDs and returns the user's default service
- * region.
+ * Throw if the gis call's response doesn't actually describe the
+ * requested region. Two failure modes both surface here:
  *
- * Skipped when serviceRegionName is missing (defensive — we don't want
- * to false-alarm on a Redfin shape change).
+ *   1. `serviceRegionName` is set but unrelated (e.g. you asked for
+ *      "Brooklyn" type-6, gis returned "arbor-heights"). This is the
+ *      original silent-fallback bug from v0.4.1.
+ *   2. `serviceRegionName` is absent but the returned `homes[]` are
+ *      in a different city/state than the resolved region (e.g.
+ *      Asheville, NC type-2 returns gis homes in Ipswich, MA). Newer
+ *      gis behavior — same underlying fallback, just no diagnostic
+ *      field. Verified live 2026-05-24 against Asheville (2_555).
+ *
+ * Zero results are accepted as legitimate (small markets with no
+ * Redfin MLS coverage will get an empty result with a notice from the
+ * caller).
  */
 export function assertRegionMatches(
   region: { name: string; sub_name?: string; region_type: number; region_id: number },
-  serviceRegionName: string | undefined
+  payload: {
+    serviceRegionName?: string;
+    homes?: Array<{ city?: string; state?: string }>;
+  }
 ): void {
-  if (!serviceRegionName) return;
-  const wanted = new Set([...tokens(region.name), ...tokens(region.sub_name)]);
-  const got = new Set(tokens(serviceRegionName));
-  // Strip generic state/country tokens that always match.
-  for (const noise of ['ny', 'usa', 'us', 'ca', 'wa', 'tx', 'fl']) {
-    wanted.delete(noise);
-    got.delete(noise);
+  const wanted = new Set([
+    ...discriminatingTokens(region.name),
+    ...discriminatingTokens(region.sub_name),
+  ]);
+  if (wanted.size === 0) return; // nothing discriminating to check
+
+  // Path 1: serviceRegionName provided — slug-style match against wanted.
+  if (payload.serviceRegionName) {
+    const got = discriminatingTokens(payload.serviceRegionName);
+    for (const w of wanted) if (got.has(w)) return;
+    throw new Error(
+      `redfin_search_properties: Redfin's gis API doesn't fully support this region — ` +
+        `requested "${region.name}" (${region.region_type}_${region.region_id}) but the server ` +
+        `returned results for "${payload.serviceRegionName}". This commonly happens with neighborhood-typed ` +
+        `regions in big cities. Try a parent city (e.g. "New York" instead of "Brooklyn"), or pass ` +
+        `region_id + region_type directly for a known-working pair.`
+    );
   }
-  for (const w of wanted) {
-    if (got.has(w)) return;
+
+  // Path 2: serviceRegionName absent — check the actual homes' cities.
+  const homes = payload.homes ?? [];
+  if (homes.length === 0) return; // 0 results is a legit signal; caller surfaces it.
+  for (const h of homes) {
+    const got = new Set([
+      ...discriminatingTokens(h.city),
+      ...discriminatingTokens(h.state),
+    ]);
+    for (const w of wanted) if (got.has(w)) return;
   }
+  const firstCity = homes[0]?.city ?? 'an unknown city';
+  const firstState = homes[0]?.state ?? '?';
   throw new Error(
-    `redfin_search_properties: Redfin's gis API doesn't fully support this region — ` +
-      `requested "${region.name}" (${region.region_type}_${region.region_id}) but the server ` +
-      `returned results for "${serviceRegionName}". This commonly happens with neighborhood-typed ` +
-      `regions in big cities. Try a parent city (e.g. "New York" instead of "Brooklyn"), or pass ` +
-      `region_id + region_type directly for a known-working pair.`
+    `redfin_search_properties: Redfin's gis API silently fell back — ` +
+      `requested "${region.name}" (${region.region_type}_${region.region_id}) but the first ${homes.length} ` +
+      `result(s) are in ${firstCity}, ${firstState} (or similar). This happens with smaller markets ` +
+      `outside Redfin's MLS coverage. Try a nearby larger city or county, or pass region_id + region_type ` +
+      `directly for a known-working pair.`
   );
 }
 
@@ -308,17 +355,30 @@ export function registerSearchTools(
         serviceRegionName?: string;
       }>(path);
       const raw = env.payload?.homes ?? [];
-      // Sanity check: when gis can't handle the region (commonly true for
-      // type=6 neighborhoods in big cities), it silently falls back to the
-      // user's default service region and ignores filters. Detect this by
-      // comparing the returned `serviceRegionName` against the resolved
-      // region's name. If they're unrelated, raise rather than mislead.
-      assertRegionMatches(region, env.payload?.serviceRegionName);
+      // Detect Redfin's silent-fallback failure modes: gis ignores the
+      // region and returns either (a) results for a different
+      // serviceRegionName, or (b) results whose city/state share no
+      // discriminating tokens with the requested region. assertRegionMatches
+      // covers both; zero results pass the check intentionally.
+      assertRegionMatches(region, {
+        serviceRegionName: env.payload?.serviceRegionName,
+        homes: raw.map((h) => ({ city: h.city, state: h.state })),
+      });
       const limit = input.limit ?? 40;
       const formatted = raw
         .map(formatHome)
         .filter((h): h is FormattedHome => h !== null)
         .slice(0, limit);
+      // Surface a helpful notice when gis legitimately has no listings
+      // for a resolved-but-tiny market (e.g. Lake Lure, NC). The
+      // assertRegionMatches check passes on empty results to avoid false
+      // alarms, so we annotate the response here.
+      const notice =
+        formatted.length === 0
+          ? `Redfin's gis API returned 0 results for region ${region.region_type}_${region.region_id} ("${region.name}"). ` +
+            "This often means the location is outside Redfin's MLS coverage rather than that there are genuinely no listings. " +
+            'Try a nearby larger city, the county, or compare against redfin.com directly.'
+          : undefined;
       return textResult({
         region: {
           name: region.name,
@@ -326,6 +386,7 @@ export function registerSearchTools(
           region_id: region.region_id,
           region_type: region.region_type,
         },
+        ...(notice ? { notice } : {}),
         results: formatted,
       });
     }

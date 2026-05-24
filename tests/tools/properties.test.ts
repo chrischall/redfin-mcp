@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import type { RedfinClient } from '../../src/client.js';
-import { format, registerPropertyTools } from '../../src/tools/properties.js';
+import {
+  InvalidPropertyUrlError,
+  extractPropertyIdFromUrl,
+  format,
+  registerPropertyTools,
+  resolveIds,
+} from '../../src/tools/properties.js';
 import { createTestHarness, parseToolResult } from '../helpers.js';
 
 const mockFetchStingrayJson = vi.fn();
@@ -12,6 +18,71 @@ let harness: Awaited<ReturnType<typeof createTestHarness>>;
 beforeEach(() => vi.clearAllMocks());
 afterAll(async () => {
   if (harness) await harness.close();
+});
+
+describe('extractPropertyIdFromUrl', () => {
+  it('finds the /home/<id> segment in a canonical URL', () => {
+    expect(
+      extractPropertyIdFromUrl(
+        'https://www.redfin.com/NY/Brooklyn/42-Monroe-St-11238/home/40732555'
+      )
+    ).toBe('40732555');
+  });
+
+  it('returns null for a URL missing the /home/<id> segment', () => {
+    expect(
+      extractPropertyIdFromUrl('/NC/Lake-Lure/268-Mallard-Rd-28746')
+    ).toBeNull();
+  });
+
+  it('handles trailing slash + query string', () => {
+    expect(
+      extractPropertyIdFromUrl('/NY/Brooklyn/foo/home/12345/?ref=share')
+    ).toBe('12345');
+  });
+});
+
+describe('resolveIds URL validation', () => {
+  it('throws InvalidPropertyUrlError when url lacks /home/<id> segment', async () => {
+    await expect(
+      resolveIds(mockClient, {
+        url: '/NC/Lake-Lure/268-Mallard-Rd-28746',
+      })
+    ).rejects.toBeInstanceOf(InvalidPropertyUrlError);
+    // We bailed early — no initialInfo call.
+    expect(mockFetchStingrayJson).not.toHaveBeenCalled();
+  });
+
+  it('proceeds past validation when the URL has a /home/<id> segment', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: { propertyId: 42, listingId: 100 },
+    });
+    const ids = await resolveIds(mockClient, {
+      url: '/NY/Brooklyn/foo/home/42',
+    });
+    expect(ids.propertyId).toBe(42);
+    expect(ids.listingId).toBe(100);
+  });
+
+  it('throws a hint-laden error when initialInfo returns no IDs for a well-formed URL', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {},
+    });
+    await expect(
+      resolveIds(mockClient, { url: '/NY/Brooklyn/foo/home/42' })
+    ).rejects.toThrow(/may have been delisted/);
+  });
+
+  it('skips initialInfo when property_id + listing_id are provided', async () => {
+    const ids = await resolveIds(mockClient, {
+      property_id: 42,
+      listing_id: 100,
+    });
+    expect(ids.propertyId).toBe(42);
+    expect(mockFetchStingrayJson).not.toHaveBeenCalled();
+  });
 });
 
 describe('format', () => {

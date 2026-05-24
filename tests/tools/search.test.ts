@@ -135,12 +135,12 @@ describe('assertRegionMatches', () => {
 
   it('passes when serviceRegionName shares a non-trivial token with the requested name', () => {
     expect(() =>
-      assertRegionMatches(region, 'new-york-east')
+      assertRegionMatches(region, { serviceRegionName: 'new-york-east' })
     ).not.toThrow();
   });
 
-  it('passes when serviceRegionName is missing (defensive — never false-alarm)', () => {
-    expect(() => assertRegionMatches(region, undefined)).not.toThrow();
+  it('passes when serviceRegionName is missing AND no homes were returned (0 results is legit)', () => {
+    expect(() => assertRegionMatches(region, { homes: [] })).not.toThrow();
   });
 
   it('throws when serviceRegionName is unrelated (Brooklyn → Seattle fallback)', () => {
@@ -152,15 +152,49 @@ describe('assertRegionMatches', () => {
           region_id: 219258,
           region_type: 6,
         },
-        'arbor-heights' // Seattle neighborhood — gis fell back
+        { serviceRegionName: 'arbor-heights' }
       )
     ).toThrow(/doesn't fully support this region/i);
   });
 
-  it('ignores noise state/country tokens (ny, usa) when matching', () => {
-    // Without the noise filter, "ny, usa" would falsely match many regions.
+  it('throws when serviceRegionName is absent but returned homes share no tokens with the region (Asheville → Ipswich)', () => {
     expect(() =>
-      assertRegionMatches(region, 'ny-usa-something-else')
+      assertRegionMatches(
+        {
+          name: 'Asheville',
+          sub_name: 'Asheville, NC, USA',
+          region_id: 555,
+          region_type: 2,
+        },
+        {
+          homes: [
+            { city: 'Ipswich', state: 'MA' },
+            { city: 'Ipswich', state: 'MA' },
+          ],
+        }
+      )
+    ).toThrow(/silently fell back/i);
+  });
+
+  it('passes when serviceRegionName is absent but homes match the requested region', () => {
+    expect(() =>
+      assertRegionMatches(
+        {
+          name: 'Asheville',
+          sub_name: 'Asheville, NC, USA',
+          region_id: 555,
+          region_type: 2,
+        },
+        { homes: [{ city: 'Asheville', state: 'NC' }] }
+      )
+    ).not.toThrow();
+  });
+
+  it('ignores noise state/country tokens (ny, usa) when matching', () => {
+    expect(() =>
+      assertRegionMatches(region, {
+        serviceRegionName: 'ny-usa-something-else',
+      })
     ).toThrow();
   });
 });
