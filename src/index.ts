@@ -28,7 +28,7 @@ import { registerRentalsTools } from './tools/rentals.js';
 import { registerAffordabilityTools } from './tools/affordability.js';
 import { registerPhotosTools } from './tools/photos.js';
 
-const VERSION = '0.3.0'; // x-release-please-version
+const VERSION = '0.4.0'; // x-release-please-version
 
 const port = process.env.REDFIN_WS_PORT
   ? Number(process.env.REDFIN_WS_PORT)
