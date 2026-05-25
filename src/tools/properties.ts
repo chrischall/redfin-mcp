@@ -41,10 +41,39 @@ export interface ResolvedIds {
   initial: InitialInfoPayload | null;
 }
 
+export class InvalidPropertyUrlError extends Error {
+  constructor(url: string, reason: string) {
+    super(
+      `Redfin property URL "${url}" ${reason}. ` +
+        `Redfin homedetails URLs include a "/home/<propertyId>" segment ` +
+        `(e.g. "/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345"). ` +
+        `Pass property_id + listing_id directly if you already have them, or ` +
+        `look up the URL on redfin.com — clicking through to the property page ` +
+        `will produce a URL with the correct /home/<id> suffix.`
+    );
+    this.name = 'InvalidPropertyUrlError';
+  }
+}
+
+/**
+ * Extract the `/home/<propertyId>` propertyId from a Redfin URL.
+ * Redfin's canonical homedetails URLs are
+ *   /<STATE>/<City>/<StreetAddress>-<ZIP>/home/<propertyId>
+ * Returns the propertyId as a string when present, null otherwise.
+ */
+export function extractPropertyIdFromUrl(url: string): string | null {
+  const m = /\/home\/(\d+)(?:[/?#]|$)/.exec(url);
+  return m ? m[1] : null;
+}
+
 /**
  * Resolve property_id + listing_id from either form of caller input.
  * Shared by `redfin_get_property` and the v0.3 tools (compare,
  * price-history, climate-risk, comparable-rentals).
+ *
+ * Throws `InvalidPropertyUrlError` for URLs missing the `/home/<id>`
+ * segment — `initialInfo` returns an empty payload for those, so the
+ * downstream "did not return propertyId+listingId" error was unhelpful.
  */
 export async function resolveIds(
   client: RedfinClient,
@@ -65,6 +94,12 @@ export async function resolveIds(
   if (!args.url) {
     throw new Error('provide either url, or both property_id + listing_id');
   }
+  if (extractPropertyIdFromUrl(args.url) === null) {
+    throw new InvalidPropertyUrlError(
+      args.url,
+      "doesn't contain the required `/home/<propertyId>` segment"
+    );
+  }
   const path = urlToPath(args.url);
   const env = await client.fetchStingrayJson<InitialInfoPayload>(
     `/stingray/api/home/details/initialInfo?path=${encodeURIComponent(path)}`
@@ -72,7 +107,10 @@ export async function resolveIds(
   const initial = env.payload ?? null;
   if (!initial?.propertyId || !initial?.listingId) {
     throw new Error(
-      `initialInfo did not return propertyId+listingId for ${args.url}`
+      `Redfin's initialInfo endpoint returned no propertyId+listingId for "${args.url}". ` +
+        `The URL has the right shape (/home/<id> is present) but Redfin couldn't resolve it — ` +
+        `the listing may have been delisted, the slug may have changed, or the propertyId may be invalid. ` +
+        `Re-grab the URL from redfin.com and retry.`
     );
   }
   return {
@@ -244,41 +282,12 @@ export function registerPropertyTools(
       },
     },
     async ({ url, property_id, listing_id }) => {
-      let propertyId: number | undefined;
-      let listingId: number | undefined;
-      let initial: InitialInfoPayload | null = null;
-      let canonicalUrl: string;
-
-      if (property_id && listing_id) {
-        propertyId = property_id;
-        listingId = listing_id;
-        canonicalUrl = url
-          ? url.startsWith('http')
-            ? url
-            : `https://www.redfin.com${urlToPath(url)}`
-          : `https://www.redfin.com/home/${propertyId}`;
-      } else if (url) {
-        const path = urlToPath(url);
-        const env = await client.fetchStingrayJson<InitialInfoPayload>(
-          `/stingray/api/home/details/initialInfo?path=${encodeURIComponent(path)}`
-        );
-        initial = env.payload ?? null;
-        propertyId = initial?.propertyId;
-        listingId = initial?.listingId;
-        canonicalUrl = url.startsWith('http')
-          ? url
-          : `https://www.redfin.com${path}`;
-      } else {
-        throw new Error(
-          'redfin_get_property: provide either url, or both property_id + listing_id.'
-        );
-      }
-
-      if (!propertyId || !listingId) {
-        throw new Error(
-          `redfin_get_property: initialInfo did not return propertyId+listingId for ${canonicalUrl}.`
-        );
-      }
+      // Route through resolveIds so URL-shape validation (Bug 4 fix)
+      // and the InvalidPropertyUrlError path fire for this entry point
+      // too — not just for compare/history/climate/rentals.
+      const ids = await resolveIds(client, { url, property_id, listing_id });
+      const { propertyId, listingId, canonicalUrl } = ids;
+      let initial: InitialInfoPayload | null = ids.initial;
 
       const atfParams = new URLSearchParams({
         propertyId: String(propertyId),

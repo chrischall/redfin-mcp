@@ -135,12 +135,12 @@ describe('assertRegionMatches', () => {
 
   it('passes when serviceRegionName shares a non-trivial token with the requested name', () => {
     expect(() =>
-      assertRegionMatches(region, 'new-york-east')
+      assertRegionMatches(region, { serviceRegionName: 'new-york-east' })
     ).not.toThrow();
   });
 
-  it('passes when serviceRegionName is missing (defensive — never false-alarm)', () => {
-    expect(() => assertRegionMatches(region, undefined)).not.toThrow();
+  it('passes when serviceRegionName is missing AND no homes were returned (0 results is legit)', () => {
+    expect(() => assertRegionMatches(region, { homes: [] })).not.toThrow();
   });
 
   it('throws when serviceRegionName is unrelated (Brooklyn → Seattle fallback)', () => {
@@ -152,15 +152,49 @@ describe('assertRegionMatches', () => {
           region_id: 219258,
           region_type: 6,
         },
-        'arbor-heights' // Seattle neighborhood — gis fell back
+        { serviceRegionName: 'arbor-heights' }
       )
     ).toThrow(/doesn't fully support this region/i);
   });
 
-  it('ignores noise state/country tokens (ny, usa) when matching', () => {
-    // Without the noise filter, "ny, usa" would falsely match many regions.
+  it('throws when serviceRegionName is absent but returned homes share no tokens with the region (Asheville → Ipswich)', () => {
     expect(() =>
-      assertRegionMatches(region, 'ny-usa-something-else')
+      assertRegionMatches(
+        {
+          name: 'Asheville',
+          sub_name: 'Asheville, NC, USA',
+          region_id: 555,
+          region_type: 2,
+        },
+        {
+          homes: [
+            { city: 'Ipswich', state: 'MA' },
+            { city: 'Ipswich', state: 'MA' },
+          ],
+        }
+      )
+    ).toThrow(/silently fell back/i);
+  });
+
+  it('passes when serviceRegionName is absent but homes match the requested region', () => {
+    expect(() =>
+      assertRegionMatches(
+        {
+          name: 'Asheville',
+          sub_name: 'Asheville, NC, USA',
+          region_id: 555,
+          region_type: 2,
+        },
+        { homes: [{ city: 'Asheville', state: 'NC' }] }
+      )
+    ).not.toThrow();
+  });
+
+  it('ignores noise state/country tokens (ny, usa) when matching', () => {
+    expect(() =>
+      assertRegionMatches(region, {
+        serviceRegionName: 'ny-usa-something-else',
+      })
     ).toThrow();
   });
 });
@@ -320,5 +354,89 @@ describe('redfin_search_properties tool', () => {
     const text = (result.content[0] as { text: string }).text;
     expect(text).toMatch(/doesn't fully support this region/i);
     expect(text).toMatch(/region_id \+ region_type directly/);
+  });
+
+  it('returns results=[] with a notice when gis returns 0 homes for a valid region', async () => {
+    // Lake Lure NC scenario: autocomplete resolves to (2_9294), gis
+    // returns rc=0 + homes=[] with no serviceRegionName. assertRegionMatches
+    // passes (0 results is legit), but the handler annotates the empty
+    // result so the caller knows it's likely a coverage gap not a true
+    // zero-inventory situation.
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          sections: [
+            {
+              name: 'Places',
+              rows: [
+                {
+                  id: '2_9294',
+                  name: 'Lake Lure',
+                  subName: 'Lake Lure, NC, USA',
+                  url: '/city/9294/NC/Lake-Lure',
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: { homes: [] },
+      });
+
+    const result = await harness.callTool('redfin_search_properties', {
+      location: 'Lake Lure, NC',
+    });
+    expect(result.isError).toBeFalsy();
+    const parsed = parseToolResult<{
+      notice?: string;
+      results: unknown[];
+    }>(result);
+    expect(parsed.results).toEqual([]);
+    expect(parsed.notice).toMatch(/outside Redfin.*MLS coverage/i);
+    expect(parsed.notice).toMatch(/Lake Lure/);
+  });
+
+  it('throws the homes-don\'t-match-region error when serviceRegionName is absent (Asheville → Ipswich)', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          sections: [
+            {
+              name: 'Places',
+              rows: [
+                {
+                  id: '2_555',
+                  name: 'Asheville',
+                  subName: 'Asheville, NC, USA',
+                  url: '/city/555/NC/Asheville',
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          // No serviceRegionName; homes are in a totally different state.
+          homes: [
+            { propertyId: 1, city: 'Ipswich', state: 'MA' },
+            { propertyId: 2, city: 'Ipswich', state: 'MA' },
+          ],
+        },
+      });
+
+    const result = await harness.callTool('redfin_search_properties', {
+      location: 'Asheville, NC',
+    });
+    expect(result.isError).toBeTruthy();
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toMatch(/silently fell back/i);
+    expect(text).toMatch(/all 2 returned result/i); // covers the "all N" wording nit
+    expect(text).toMatch(/Ipswich/);
   });
 });
