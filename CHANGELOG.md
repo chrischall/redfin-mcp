@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/chrischall/redfin-mcp/compare/v0.4.3...v0.4.4) (2026-05-25)
+
+
+### Bug Fixes
+
+* **ci:** prevent labeled event from cancelling auto-review ([#19](https://github.com/chrischall/redfin-mcp/issues/19)) ([4323eb4](https://github.com/chrischall/redfin-mcp/commit/4323eb45a43f6b485a8ff0eab7e35be11dfbb5af))
+
 ## [0.4.3](https://github.com/chrischall/redfin-mcp/compare/v0.4.2...v0.4.3) (2026-05-25)
 
 
