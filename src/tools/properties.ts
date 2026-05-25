@@ -282,41 +282,12 @@ export function registerPropertyTools(
       },
     },
     async ({ url, property_id, listing_id }) => {
-      let propertyId: number | undefined;
-      let listingId: number | undefined;
-      let initial: InitialInfoPayload | null = null;
-      let canonicalUrl: string;
-
-      if (property_id && listing_id) {
-        propertyId = property_id;
-        listingId = listing_id;
-        canonicalUrl = url
-          ? url.startsWith('http')
-            ? url
-            : `https://www.redfin.com${urlToPath(url)}`
-          : `https://www.redfin.com/home/${propertyId}`;
-      } else if (url) {
-        const path = urlToPath(url);
-        const env = await client.fetchStingrayJson<InitialInfoPayload>(
-          `/stingray/api/home/details/initialInfo?path=${encodeURIComponent(path)}`
-        );
-        initial = env.payload ?? null;
-        propertyId = initial?.propertyId;
-        listingId = initial?.listingId;
-        canonicalUrl = url.startsWith('http')
-          ? url
-          : `https://www.redfin.com${path}`;
-      } else {
-        throw new Error(
-          'redfin_get_property: provide either url, or both property_id + listing_id.'
-        );
-      }
-
-      if (!propertyId || !listingId) {
-        throw new Error(
-          `redfin_get_property: initialInfo did not return propertyId+listingId for ${canonicalUrl}.`
-        );
-      }
+      // Route through resolveIds so URL-shape validation (Bug 4 fix)
+      // and the InvalidPropertyUrlError path fire for this entry point
+      // too — not just for compare/history/climate/rentals.
+      const ids = await resolveIds(client, { url, property_id, listing_id });
+      const { propertyId, listingId, canonicalUrl } = ids;
+      let initial: InitialInfoPayload | null = ids.initial;
 
       const atfParams = new URLSearchParams({
         propertyId: String(propertyId),

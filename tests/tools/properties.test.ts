@@ -253,16 +253,27 @@ describe('redfin_get_property tool', () => {
     expect(result.isError).toBeTruthy();
   });
 
-  it('errors when initialInfo cannot resolve the URL', async () => {
+  it('errors with InvalidPropertyUrlError when URL has no /home/<id> segment', async () => {
+    const result = await harness.callTool('redfin_get_property', {
+      url: '/NC/Lake-Lure/268-Mallard-Rd-28746',
+    });
+    expect(result.isError).toBeTruthy();
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toMatch(/doesn't contain the required `\/home\/<propertyId>`/);
+    // Bailed before initialInfo — no network call.
+    expect(mockFetchStingrayJson).not.toHaveBeenCalled();
+  });
+
+  it('errors with the delisted/slug-change hint when initialInfo returns no IDs for a well-formed URL', async () => {
     mockFetchStingrayJson.mockResolvedValueOnce({
       resultCode: 0,
       payload: {},
     });
     const result = await harness.callTool('redfin_get_property', {
-      url: '/bad-url',
+      url: '/NY/Brooklyn/foo/home/42',
     });
     expect(result.isError).toBeTruthy();
     const text = (result.content[0] as { text: string }).text;
-    expect(text).toMatch(/initialInfo did not return propertyId/i);
+    expect(text).toMatch(/may have been delisted/);
   });
 });

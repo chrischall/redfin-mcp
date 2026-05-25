@@ -355,4 +355,88 @@ describe('redfin_search_properties tool', () => {
     expect(text).toMatch(/doesn't fully support this region/i);
     expect(text).toMatch(/region_id \+ region_type directly/);
   });
+
+  it('returns results=[] with a notice when gis returns 0 homes for a valid region', async () => {
+    // Lake Lure NC scenario: autocomplete resolves to (2_9294), gis
+    // returns rc=0 + homes=[] with no serviceRegionName. assertRegionMatches
+    // passes (0 results is legit), but the handler annotates the empty
+    // result so the caller knows it's likely a coverage gap not a true
+    // zero-inventory situation.
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          sections: [
+            {
+              name: 'Places',
+              rows: [
+                {
+                  id: '2_9294',
+                  name: 'Lake Lure',
+                  subName: 'Lake Lure, NC, USA',
+                  url: '/city/9294/NC/Lake-Lure',
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: { homes: [] },
+      });
+
+    const result = await harness.callTool('redfin_search_properties', {
+      location: 'Lake Lure, NC',
+    });
+    expect(result.isError).toBeFalsy();
+    const parsed = parseToolResult<{
+      notice?: string;
+      results: unknown[];
+    }>(result);
+    expect(parsed.results).toEqual([]);
+    expect(parsed.notice).toMatch(/outside Redfin.*MLS coverage/i);
+    expect(parsed.notice).toMatch(/Lake Lure/);
+  });
+
+  it('throws the homes-don\'t-match-region error when serviceRegionName is absent (Asheville → Ipswich)', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          sections: [
+            {
+              name: 'Places',
+              rows: [
+                {
+                  id: '2_555',
+                  name: 'Asheville',
+                  subName: 'Asheville, NC, USA',
+                  url: '/city/555/NC/Asheville',
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          // No serviceRegionName; homes are in a totally different state.
+          homes: [
+            { propertyId: 1, city: 'Ipswich', state: 'MA' },
+            { propertyId: 2, city: 'Ipswich', state: 'MA' },
+          ],
+        },
+      });
+
+    const result = await harness.callTool('redfin_search_properties', {
+      location: 'Asheville, NC',
+    });
+    expect(result.isError).toBeTruthy();
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toMatch(/silently fell back/i);
+    expect(text).toMatch(/all 2 returned result/i); // covers the "all N" wording nit
+    expect(text).toMatch(/Ipswich/);
+  });
 });

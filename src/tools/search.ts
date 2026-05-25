@@ -254,10 +254,10 @@ export function assertRegionMatches(
   const firstState = homes[0]?.state ?? '?';
   throw new Error(
     `redfin_search_properties: Redfin's gis API silently fell back — ` +
-      `requested "${region.name}" (${region.region_type}_${region.region_id}) but the first ${homes.length} ` +
-      `result(s) are in ${firstCity}, ${firstState} (or similar). This happens with smaller markets ` +
-      `outside Redfin's MLS coverage. Try a nearby larger city or county, or pass region_id + region_type ` +
-      `directly for a known-working pair.`
+      `requested "${region.name}" (${region.region_type}_${region.region_id}) but all ${homes.length} ` +
+      `returned result(s) are in ${firstCity}, ${firstState} (or similar) — none match the requested region. ` +
+      `This happens with smaller markets outside Redfin's MLS coverage. Try a nearby larger city or county, ` +
+      `or pass region_id + region_type directly for a known-working pair.`
   );
 }
 
