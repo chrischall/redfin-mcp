@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/chrischall/redfin-mcp/compare/v0.4.2...v0.4.3) (2026-05-25)
+
+
+### Bug Fixes
+
+* **search+get_property:** catch gis silent fallback by homes, validate URL shape ([#16](https://github.com/chrischall/redfin-mcp/issues/16)) ([6546e4c](https://github.com/chrischall/redfin-mcp/commit/6546e4c1677aaa51540f149ab6ba648685115372))
+
 ## [0.4.2](https://github.com/chrischall/redfin-mcp/compare/v0.4.1...v0.4.2) (2026-05-24)
 
 
