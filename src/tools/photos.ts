@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import {
+  buildCanonicalUrl,
   resolveIds,
   type AboveTheFoldPayload,
 } from './properties.js';
@@ -181,14 +182,18 @@ export function registerPhotosTools(
       const env = await client.fetchStingrayJson<AboveTheFoldWithMedia>(
         `/stingray/api/home/details/aboveTheFold?${atfParams.toString()}`
       );
-      const rawPhotos = env.payload?.mediaBrowserInfo?.photos ?? [];
+      const atf = env.payload ?? null;
+      const rawPhotos = atf?.mediaBrowserInfo?.photos ?? [];
       const photos = rawPhotos
         .map(formatPhoto)
         .filter((p): p is FormattedPhoto => p !== null);
+      const canonicalUrl = url
+        ? ids.canonicalUrl
+        : (buildCanonicalUrl(atf?.addressSectionInfo, ids.propertyId) ?? ids.canonicalUrl);
       return textResult({
         property_id: ids.propertyId,
         listing_id: ids.listingId,
-        url: ids.canonicalUrl,
+        url: canonicalUrl,
         count: photos.length,
         photos,
       });

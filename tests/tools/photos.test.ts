@@ -187,4 +187,27 @@ describe('redfin_get_property_photos tool', () => {
     expect(parsed.count).toBe(0);
     expect(parsed.photos).toEqual([]);
   });
+
+  it('returns canonical URL when called with IDs and ATF gives address', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: {
+          streetAddress: '158 Raven Blvd',
+          city: 'Lake Lure',
+          state: 'NC',
+          zip: '28746',
+        },
+        mediaBrowserInfo: { photos: [] },
+      },
+    });
+    const r = await harness.callTool('redfin_get_property_photos', {
+      property_id: 112653221,
+      listing_id: 99,
+    });
+    const parsed = parseToolResult<{ url: string }>(r);
+    expect(parsed.url).toBe(
+      'https://www.redfin.com/NC/Lake-Lure/158-Raven-Blvd-28746/home/112653221'
+    );
+  });
 });

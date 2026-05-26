@@ -131,8 +131,8 @@ describe('redfin_get_price_history tool', () => {
     expect(parsed.tax_events[0].year).toBe(2024);
   });
 
-  it('skips initialInfo when property_id+listing_id are provided', async () => {
-    mockFetchStingrayJson.mockResolvedValueOnce({
+  it('skips initialInfo when property_id+listing_id are provided (fetches BTF + ATF in parallel for canonical URL)', async () => {
+    mockFetchStingrayJson.mockResolvedValue({
       resultCode: 0,
       payload: {},
     });
@@ -140,7 +140,80 @@ describe('redfin_get_price_history tool', () => {
       property_id: 99,
       listing_id: 999,
     });
-    expect(mockFetchStingrayJson).toHaveBeenCalledTimes(1);
-    expect(mockFetchStingrayJson.mock.calls[0][0]).toMatch(/belowTheFold/);
+    const paths = mockFetchStingrayJson.mock.calls.map((c) => c[0] as string);
+    expect(paths.some((p) => /belowTheFold/.test(p))).toBe(true);
+    expect(paths.some((p) => /aboveTheFold/.test(p))).toBe(true);
+    expect(paths.every((p) => !/initialInfo/.test(p))).toBe(true);
+  });
+
+  it('returns canonical URL when called with IDs and ATF provides address', async () => {
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (/aboveTheFold/.test(path)) {
+        return {
+          resultCode: 0,
+          payload: {
+            addressSectionInfo: {
+              streetAddress: '268 Mallard Rd',
+              city: 'Lake Lure',
+              state: 'NC',
+              zip: '28746',
+            },
+          },
+        };
+      }
+      return { resultCode: 0, payload: {} };
+    });
+    const r = await harness.callTool('redfin_get_price_history', {
+      property_id: 12345,
+      listing_id: 99,
+    });
+    const parsed = parseToolResult<{ url: string }>(r);
+    expect(parsed.url).toBe(
+      'https://www.redfin.com/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345'
+    );
+  });
+
+  it('skips parallel ATF when URL was provided (canonical URL already known)', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: { propertyId: 1, listingId: 2 },
+      })
+      .mockResolvedValueOnce({ resultCode: 0, payload: {} });
+    await harness.callTool('redfin_get_price_history', {
+      url: '/NY/Brooklyn/foo/home/1',
+    });
+    const paths = mockFetchStingrayJson.mock.calls.map((c) => c[0] as string);
+    expect(paths.some((p) => /aboveTheFold/.test(p))).toBe(false);
+  });
+
+  it('falls back to /home/<id> short form when parallel ATF errors (does not break price-history)', async () => {
+    // The ATF fetch is best-effort — its only job is to provide an
+    // addressSectionInfo for canonical-URL upgrading. A transient ATF
+    // error must not surface to the caller; price-history still works
+    // and the URL gracefully degrades to the short form.
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (/aboveTheFold/.test(path)) {
+        throw new Error('ATF transient failure');
+      }
+      // BTF: valid response with one price event so we can assert the
+      // tool returned a real result, not just an error.
+      return {
+        resultCode: 0,
+        payload: {
+          propertyHistoryInfo: {
+            events: [{ eventDescription: 'Listed', price: 1, eventDate: 1 }],
+          },
+        },
+      };
+    });
+    const r = await harness.callTool('redfin_get_price_history', {
+      property_id: 42,
+      listing_id: 99,
+    });
+    expect(r.isError).toBeFalsy();
+    const parsed = parseToolResult<{ url: string; price_events: unknown[] }>(r);
+    expect(parsed.url).toBe('https://www.redfin.com/home/42');
+    expect(parsed.price_events.length).toBe(1);
   });
 });
