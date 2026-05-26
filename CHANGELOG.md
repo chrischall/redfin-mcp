@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.5](https://github.com/chrischall/redfin-mcp/compare/v0.4.4...v0.4.5) (2026-05-26)
+
+
+### Documentation
+
+* **claude:** warn against early PRs and call out first-party dep bumps ([#22](https://github.com/chrischall/redfin-mcp/issues/22)) ([76457e9](https://github.com/chrischall/redfin-mcp/commit/76457e9447ae1b6d6ae88fad9db0383e54f83e08))
+
 ## [0.4.4](https://github.com/chrischall/redfin-mcp/compare/v0.4.3...v0.4.4) (2026-05-25)
 
 
