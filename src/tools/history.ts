@@ -2,7 +2,11 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
-import { resolveIds } from './properties.js';
+import {
+  buildCanonicalUrl,
+  resolveIds,
+  type AboveTheFoldPayload,
+} from './properties.js';
 
 /**
  * Redfin's price + tax history lives in the `belowTheFold` endpoint,
@@ -113,10 +117,25 @@ export async function fetchBelowTheFold(
     accessLevel: '1',
     listingId: String(ids.listingId),
   });
-  const env = await client.fetchStingrayJson<BelowTheFoldPayload>(
+  // BTF doesn't carry address data, so when the caller passed IDs only
+  // (no URL), fetch ATF in parallel just for addressSectionInfo so we
+  // can upgrade the canonical URL away from the /home/<id> short form.
+  const btfPromise = client.fetchStingrayJson<BelowTheFoldPayload>(
     `/stingray/api/home/details/belowTheFold?${params.toString()}`
   );
-  return { payload: env.payload ?? null, canonicalUrl: ids.canonicalUrl };
+  const atfPromise: Promise<AboveTheFoldPayload | null> = args.url
+    ? Promise.resolve(null)
+    : client
+        .fetchStingrayJson<AboveTheFoldPayload>(
+          `/stingray/api/home/details/aboveTheFold?${params.toString()}`
+        )
+        .then((e) => e.payload ?? null)
+        .catch(() => null);
+  const [btfEnv, atf] = await Promise.all([btfPromise, atfPromise]);
+  const canonicalUrl = args.url
+    ? ids.canonicalUrl
+    : (buildCanonicalUrl(atf?.addressSectionInfo, ids.propertyId) ?? ids.canonicalUrl);
+  return { payload: btfEnv.payload ?? null, canonicalUrl };
 }
 
 export function registerHistoryTools(

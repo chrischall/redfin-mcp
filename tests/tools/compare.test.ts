@@ -84,6 +84,35 @@ describe('redfin_compare_properties tool', () => {
     ]);
   });
 
+  it('returns canonical URLs when targets are IDs-only and ATF gives address', async () => {
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      const m = /propertyId=(\d+)/.exec(path);
+      const pid = m ? parseInt(m[1], 10) : 0;
+      return {
+        resultCode: 0,
+        payload: {
+          addressSectionInfo: {
+            streetAddress: `${pid} Main St`,
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+          },
+        },
+      };
+    });
+    const r = await harness.callTool('redfin_compare_properties', {
+      targets: [
+        { property_id: 1, listing_id: 10 },
+        { property_id: 2, listing_id: 20 },
+      ],
+    });
+    const parsed = parseToolResult<{ results: Array<{ url: string }> }>(r);
+    expect(parsed.results.map((x) => x.url)).toEqual([
+      'https://www.redfin.com/NC/Lake-Lure/1-Main-St-28746/home/1',
+      'https://www.redfin.com/NC/Lake-Lure/2-Main-St-28746/home/2',
+    ]);
+  });
+
   it('captures per-target errors without failing the whole call', async () => {
     let n = 0;
     mockFetchStingrayJson.mockImplementation(async () => {

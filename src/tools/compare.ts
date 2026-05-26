@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import {
+  buildCanonicalUrl,
   format,
   resolveIds,
   type AboveTheFoldPayload,
@@ -105,14 +106,18 @@ export function registerCompareTools(
               const env = await client.fetchStingrayJson<AboveTheFoldPayload>(
                 `/stingray/api/home/details/aboveTheFold?${params.toString()}`
               );
+              const atf = env.payload ?? null;
               const initial = ids.initial ?? {
                 propertyId: ids.propertyId,
                 listingId: ids.listingId,
               };
+              const canonicalUrl = t.url
+                ? ids.canonicalUrl
+                : (buildCanonicalUrl(atf?.addressSectionInfo, ids.propertyId) ?? ids.canonicalUrl);
               return {
                 property_id: ids.propertyId,
-                url: ids.canonicalUrl,
-                property: format(initial, env.payload ?? null, ids.canonicalUrl),
+                url: canonicalUrl,
+                property: format(initial, atf, canonicalUrl),
               };
             } catch (e) {
               return {
