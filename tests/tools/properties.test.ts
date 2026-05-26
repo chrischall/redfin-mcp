@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import type { RedfinClient } from '../../src/client.js';
 import {
   InvalidPropertyUrlError,
+  buildCanonicalUrl,
   extractPropertyIdFromUrl,
   format,
   registerPropertyTools,
@@ -82,6 +83,64 @@ describe('resolveIds URL validation', () => {
     });
     expect(ids.propertyId).toBe(42);
     expect(mockFetchStingrayJson).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildCanonicalUrl', () => {
+  it('builds /<STATE>/<City>/<Street>-<ZIP>/home/<id> with dashes for spaces', () => {
+    const url = buildCanonicalUrl(
+      {
+        streetAddress: { assembledAddress: '268 Mallard Rd' },
+        city: 'Lake Lure',
+        state: 'NC',
+        zip: '28746',
+      },
+      12345
+    );
+    expect(url).toBe(
+      'https://www.redfin.com/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345'
+    );
+  });
+
+  it('accepts streetAddress as a plain string', () => {
+    const url = buildCanonicalUrl(
+      { streetAddress: '42 Monroe St', city: 'Brooklyn', state: 'NY', zip: '11238' },
+      40732555
+    );
+    expect(url).toBe(
+      'https://www.redfin.com/NY/Brooklyn/42-Monroe-St-11238/home/40732555'
+    );
+  });
+
+  it('returns null when any address part is missing', () => {
+    expect(
+      buildCanonicalUrl({ streetAddress: 'x', city: 'X', state: 'NY' }, 1)
+    ).toBeNull();
+    expect(
+      buildCanonicalUrl({ streetAddress: 'x', state: 'NY', zip: '1' }, 1)
+    ).toBeNull();
+    expect(buildCanonicalUrl(undefined, 1)).toBeNull();
+    expect(
+      buildCanonicalUrl(
+        { streetAddress: 'x', city: 'X', state: 'NY', zip: '1' },
+        undefined
+      )
+    ).toBeNull();
+  });
+
+  it('collapses multiple consecutive whitespace into a single dash', () => {
+    const url = buildCanonicalUrl(
+      {
+        streetAddress: '155  Quail   Cove Blvd',
+        city: 'Lake  Lure',
+        state: 'NC',
+        zip: '28746',
+      },
+      77
+    );
+    expect(url).toBe(
+      'https://www.redfin.com/NC/Lake-Lure/155-Quail-Cove-Blvd-28746/home/77'
+    );
   });
 });
 
@@ -246,6 +305,43 @@ describe('redfin_get_property tool', () => {
     expect(mockFetchStingrayJson.mock.calls[0][0]).toMatch(
       /aboveTheFold\?propertyId=99/
     );
+  });
+
+  it('with property_id + listing_id: returns canonical full URL (not /home/<id> short form)', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: {
+          streetAddress: { assembledAddress: '268 Mallard Rd' },
+          city: 'Lake Lure',
+          state: 'NC',
+          zip: '28746',
+        },
+      },
+    });
+
+    const result = await harness.callTool('redfin_get_property', {
+      property_id: 12345,
+      listing_id: 99,
+    });
+    const parsed = parseToolResult<{ url: string }>(result);
+    expect(parsed.url).toBe(
+      'https://www.redfin.com/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345'
+    );
+  });
+
+  it('falls back to /home/<id> when ATF address data is incomplete', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: { addressSectionInfo: { streetAddress: '5 X St' } }, // no city/state/zip
+    });
+
+    const result = await harness.callTool('redfin_get_property', {
+      property_id: 12345,
+      listing_id: 99,
+    });
+    const parsed = parseToolResult<{ url: string }>(result);
+    expect(parsed.url).toBe('https://www.redfin.com/home/12345');
   });
 
   it('errors when neither url nor property_id+listing_id provided', async () => {

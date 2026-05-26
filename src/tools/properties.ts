@@ -123,7 +123,7 @@ export async function resolveIds(
   };
 }
 
-interface AddressSectionInfo {
+export interface AddressSectionInfo {
   streetAddress?: { assembledAddress?: string } | string;
   city?: string;
   state?: string;
@@ -142,6 +142,22 @@ interface AddressSectionInfo {
   fips?: string;
   apn?: string;
   latLong?: { value?: { latitude?: number; longitude?: number } };
+}
+
+// Redfin's canonical homedetails URL is /<STATE>/<City>/<Street>-<ZIP>/home/<id>.
+// Returns null when address parts are missing so the caller can fall back.
+export function buildCanonicalUrl(
+  addr: AddressSectionInfo | undefined,
+  propertyId: number | undefined
+): string | null {
+  if (!addr || !propertyId) return null;
+  const street =
+    typeof addr.streetAddress === 'object'
+      ? addr.streetAddress?.assembledAddress
+      : addr.streetAddress;
+  if (!street || !addr.city || !addr.state || !addr.zip) return null;
+  const slug = (s: string) => s.trim().replace(/\s+/g, '-');
+  return `https://www.redfin.com/${addr.state}/${slug(addr.city)}/${slug(street)}-${addr.zip}/home/${propertyId}`;
 }
 
 interface MediaBrowserInfo {
@@ -286,7 +302,7 @@ export function registerPropertyTools(
       // and the InvalidPropertyUrlError path fire for this entry point
       // too — not just for compare/history/climate/rentals.
       const ids = await resolveIds(client, { url, property_id, listing_id });
-      const { propertyId, listingId, canonicalUrl } = ids;
+      const { propertyId, listingId } = ids;
       let initial: InitialInfoPayload | null = ids.initial;
 
       const atfParams = new URLSearchParams({
@@ -298,6 +314,12 @@ export function registerPropertyTools(
         `/stingray/api/home/details/aboveTheFold?${atfParams.toString()}`
       );
       const atf = atfEnv.payload ?? null;
+
+      // resolveIds emits the short /home/<id> form when the caller passed
+      // IDs without a URL; upgrade to the canonical full path once ATF
+      // gives us the address parts.
+      const canonicalUrl =
+        url ? ids.canonicalUrl : (buildCanonicalUrl(atf?.addressSectionInfo, propertyId) ?? ids.canonicalUrl);
 
       if (!initial) initial = { propertyId, listingId };
       return textResult(format(initial, atf, canonicalUrl));
