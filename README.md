@@ -20,6 +20,7 @@ Redfin real-estate access as an MCP server for Claude — search listings, fetch
 | `redfin_get_saved_homes` | Your favorited homes — flattened across all collections, with primary photo URLs constructed from each home's CDN handles. | ✓ |
 | `redfin_get_saved_searches` | Your saved searches with region URLs and display text. | ✓ |
 | `redfin_calculate_mortgage` | Local PITI calculator — principal+interest, taxes, insurance, HOA, PMI (no network). | |
+| `redfin_get_by_address` | Resolve a free-text address to its Redfin canonical URL + home_id. Degrades to `resolved: false` when no listing matches. One autocomplete round-trip. | |
 
 ## Acknowledgement of Terms
 

@@ -12,7 +12,8 @@ This is a "Pattern A" fetchproxy MCP (every call rides through fetchproxy), not 
 
 | Tool | File | Endpoint(s) | Kind |
 | --- | --- | --- | --- |
-| `redfin_search_properties` | `tools/search.ts` | (a) `GET /stingray/do/location-autocomplete?location=…` → region<br>(b) `GET /stingray/api/gis?region_id=…&region_type=…&…` | read |
+| `redfin_search_properties` | `tools/search.ts` | (a) `GET /stingray/do/location-autocomplete?location=…` → region OR address<br>(b) `GET /stingray/api/gis?region_id=…&region_type=…&…` (region path) — address path short-circuits to a 1-result reply | read |
+| `redfin_get_by_address` | `tools/get-by-address.ts` | `GET /stingray/do/location-autocomplete?location=…` → first `Addresses` row → parse `/home/<id>` | read |
 | `redfin_get_property` | `tools/properties.ts` | (a) `GET /stingray/api/home/details/initialInfo?path=…` → propertyId+listingId<br>(b) `GET /stingray/api/home/details/aboveTheFold?propertyId=…&listingId=…` | read |
 | `redfin_get_property_photos` | `tools/photos.ts` | (a) optional `initialInfo` to resolve IDs<br>(b) `GET /stingray/api/home/details/aboveTheFold?…` (mediaBrowserInfo.photos[]) | read |
 | `redfin_get_market_report` | `tools/market.ts` | `GET /stingray/api/region/<region_type>/<region_id>/<property_type>/offer-insights` | read |
@@ -38,7 +39,9 @@ src/
   client.ts             # RedfinClient.fetchHtml / fetchJson / fetchStingrayJson
                         #   + sign-in detection (WAF challenge / /login redirect)
                         #   + stripStingrayPrefix helper
-  autocomplete.ts       # resolveRegion: free-text → region_id+region_type via
+  autocomplete.ts       # resolveRegion / resolveAddress / resolveBoth:
+                        #   free-text → region_id+region_type (Places) or
+                        #   home_id+url (Addresses) via
                         #   /stingray/do/location-autocomplete
   url.ts                # urlToPath — reduce a Redfin URL or bare path
                         #   to its path+search portion

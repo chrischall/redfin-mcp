@@ -399,6 +399,48 @@ describe('redfin_search_properties tool', () => {
     expect(parsed.notice).toMatch(/Lake Lure/);
   });
 
+  it('falls back to Addresses-section resolution for a full street-address query (#24)', async () => {
+    // Real-world repro: searching for "155 Quail Cove Blvd Lake Lure NC 28746"
+    // returns NO Places section, only Addresses. Old behaviour: throw
+    // "could not resolve location". New behaviour: surface the matched
+    // address as a single result so the caller can act on the home_id.
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        sections: [
+          {
+            name: 'Addresses',
+            rows: [
+              {
+                name: '155 Quail Cove Blvd',
+                subName: 'Lake Lure, NC 28746',
+                url: '/NC/Lake-Lure/155-Quail-Cove-Blvd-28746/home/112653222',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const result = await harness.callTool('redfin_search_properties', {
+      location: '155 Quail Cove Blvd Lake Lure NC 28746',
+    });
+    expect(result.isError).toBeFalsy();
+    const parsed = parseToolResult<{
+      resolved_as: 'address' | 'region';
+      results: Array<{ property_id: number; url: string; address: string }>;
+    }>(result);
+    expect(parsed.resolved_as).toBe('address');
+    expect(parsed.results).toHaveLength(1);
+    expect(parsed.results[0].property_id).toBe(112653222);
+    expect(parsed.results[0].url).toBe(
+      'https://www.redfin.com/NC/Lake-Lure/155-Quail-Cove-Blvd-28746/home/112653222'
+    );
+    expect(parsed.results[0].address).toMatch(/155 Quail Cove Blvd/);
+    // gis must NOT have been called — we resolved directly via autocomplete.
+    expect(mockFetchStingrayJson).toHaveBeenCalledTimes(1);
+  });
+
   it('throws the homes-don\'t-match-region error when serviceRegionName is absent (Asheville → Ipswich)', async () => {
     mockFetchStingrayJson
       .mockResolvedValueOnce({
