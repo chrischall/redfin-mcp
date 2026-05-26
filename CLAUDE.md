@@ -24,6 +24,7 @@ This is a "Pattern A" fetchproxy MCP (every call rides through fetchproxy), not 
 | `redfin_get_saved_searches` | `tools/saved.ts` | `GET /myredfin/saved-searches` HTML → regex region URLs | read (auth) |
 | `redfin_calculate_mortgage` | `tools/mortgage.ts` | (local; no network) | read |
 | `redfin_calculate_affordability` | `tools/affordability.ts` | (local; no network) | read |
+| `redfin_healthcheck` | `tools/healthcheck.ts` | `GET /robots.txt` round-trip through fetchproxy + bridge status | read |
 
 All `/stingray/...` JSON responses begin with a `{}&&` anti-CSRF prefix; `RedfinClient.fetchStingrayJson` strips it. The two HTML-scraped tools (saved homes, saved searches) use regex extraction since Redfin's user-facing pages are React Server Components — there's no embedded `__NEXT_DATA__` blob like Zillow has.
 
