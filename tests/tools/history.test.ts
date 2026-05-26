@@ -186,4 +186,34 @@ describe('redfin_get_price_history tool', () => {
     const paths = mockFetchStingrayJson.mock.calls.map((c) => c[0] as string);
     expect(paths.some((p) => /aboveTheFold/.test(p))).toBe(false);
   });
+
+  it('falls back to /home/<id> short form when parallel ATF errors (does not break price-history)', async () => {
+    // The ATF fetch is best-effort — its only job is to provide an
+    // addressSectionInfo for canonical-URL upgrading. A transient ATF
+    // error must not surface to the caller; price-history still works
+    // and the URL gracefully degrades to the short form.
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (/aboveTheFold/.test(path)) {
+        throw new Error('ATF transient failure');
+      }
+      // BTF: valid response with one price event so we can assert the
+      // tool returned a real result, not just an error.
+      return {
+        resultCode: 0,
+        payload: {
+          propertyHistoryInfo: {
+            events: [{ eventDescription: 'Listed', price: 1, eventDate: 1 }],
+          },
+        },
+      };
+    });
+    const r = await harness.callTool('redfin_get_price_history', {
+      property_id: 42,
+      listing_id: 99,
+    });
+    expect(r.isError).toBeFalsy();
+    const parsed = parseToolResult<{ url: string; price_events: unknown[] }>(r);
+    expect(parsed.url).toBe('https://www.redfin.com/home/42');
+    expect(parsed.price_events.length).toBe(1);
+  });
 });
