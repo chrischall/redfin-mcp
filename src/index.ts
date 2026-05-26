@@ -27,6 +27,7 @@ import { registerClimateTools } from './tools/climate.js';
 import { registerRentalsTools } from './tools/rentals.js';
 import { registerAffordabilityTools } from './tools/affordability.js';
 import { registerPhotosTools } from './tools/photos.js';
+import { registerGetByAddressTools } from './tools/get-by-address.js';
 import { registerHealthcheckTools } from './tools/healthcheck.js';
 
 const VERSION = '0.4.5'; // x-release-please-version
@@ -53,6 +54,7 @@ registerClimateTools(server, client);
 registerRentalsTools(server, client);
 registerAffordabilityTools(server);
 registerPhotosTools(server, client);
+registerGetByAddressTools(server, client);
 registerHealthcheckTools(server, client);
 
 console.error(

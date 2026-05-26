@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
-import { resolveRegion } from '../autocomplete.js';
+import { resolveBoth, type RedfinAddress } from '../autocomplete.js';
 
 /**
  * Redfin's search API: `GET /stingray/api/gis?...&region_id=X&region_type=Y`
@@ -291,6 +291,45 @@ export function buildGisPath(
   return `/stingray/api/gis?${new URLSearchParams(params).toString()}`;
 }
 
+/**
+ * When autocomplete returns NO Places match but DID match an
+ * Addresses row, the user clearly meant "find this specific home" —
+ * not "search the region around it". Surface the resolved address as
+ * a one-row result so the caller can pick up the home_id and follow
+ * up with `redfin_get_property` if they want details. Skips the gis
+ * call entirely.
+ *
+ * The shape mirrors a normal `redfin_search_properties` response so a
+ * caller iterating `results[]` doesn't need a special-case branch;
+ * `resolved_as: 'address'` is the discriminator if they do.
+ */
+export function addressOnlyResult(address: RedfinAddress): {
+  region: null;
+  resolved_as: 'address';
+  notice: string;
+  results: FormattedHome[];
+} {
+  const result: FormattedHome = {
+    property_id: parseInt(address.home_id, 10),
+    url: address.url,
+    address: [address.street_address, address.city, address.state, address.zip]
+      .filter(Boolean)
+      .join(', '),
+    street: address.street_address,
+    city: address.city,
+    state: address.state,
+    zip: address.zip,
+  };
+  return {
+    region: null,
+    resolved_as: 'address',
+    notice:
+      "Redfin's autocomplete matched the input as a single address (not a region), so we skipped the gis search and returned the resolved home. " +
+      'Call `redfin_get_property` with this URL for the full property record.',
+    results: [result],
+  };
+}
+
 export function registerSearchTools(
   server: McpServer,
   client: RedfinClient
@@ -300,7 +339,7 @@ export function registerSearchTools(
     {
       title: 'Search Redfin listings',
       description:
-        "Search Redfin listings by location (city, ZIP, neighborhood, or address) and optional filters. Resolves the location via Redfin's autocomplete then queries the gis API. Returns matching properties with price, beds/baths, sqft, year built, address, and the Redfin home URL. v0.1.0 supports `for_sale` status only — for-rent and recently-sold live on separate Redfin URL paths. Read-only; safe to call repeatedly.",
+        "Search Redfin listings by location (city, ZIP, neighborhood, or full street address) and optional filters. Resolves the location via Redfin's autocomplete then queries the gis API; full street addresses short-circuit to the single matched home (no gis call). Returns matching properties with price, beds/baths, sqft, year built, address, and the Redfin home URL — the `resolved_as` field is `'region'` for regional searches and `'address'` for address-only matches. v0.1.0 supports `for_sale` status only — for-rent and recently-sold live on separate Redfin URL paths. Read-only; safe to call repeatedly.",
       annotations: {
         title: 'Search Redfin listings',
         readOnlyHint: true,
@@ -343,10 +382,19 @@ export function registerSearchTools(
       },
     },
     async (input) => {
-      const region = await resolveRegion(client, input.location);
+      // One autocomplete call returns both a Places (region) and an
+      // Addresses match when either exists. Address-typed queries
+      // (full street addresses) typically return Addresses-only —
+      // before this change we'd error out, even though the user gave
+      // us a perfectly resolvable address. Fix for #24.
+      const { region, address } = await resolveBoth(client, input.location);
       if (!region) {
+        if (address) {
+          return textResult(addressOnlyResult(address));
+        }
         throw new Error(
-          `redfin_search_properties: could not resolve location "${input.location}" to a Redfin region.`
+          `redfin_search_properties: could not resolve location "${input.location}" to a Redfin region or address. ` +
+            `If you have a full street address, try \`redfin_get_by_address\` instead.`
         );
       }
       const path = buildGisPath(region, input);
@@ -380,6 +428,7 @@ export function registerSearchTools(
             'Try a nearby larger city, the county, or compare against redfin.com directly.'
           : undefined;
       return textResult({
+        resolved_as: 'region' as const,
         region: {
           name: region.name,
           sub_name: region.sub_name,
