@@ -14,7 +14,12 @@
 //
 // Error mapping (non-2xx, sign-in interstitial, empty 204 body) lives
 // here so tool authors never have to think about it.
-import type { FetchInit, FetchResult, RedfinTransport } from './transport.js';
+import type {
+  BridgeStatus,
+  FetchInit,
+  FetchResult,
+  RedfinTransport,
+} from './transport.js';
 
 export class SessionNotAuthenticatedError extends Error {
   constructor() {
@@ -49,6 +54,11 @@ export class RedfinClient {
 
   async close(): Promise<void> {
     await this.transport.close();
+  }
+
+  /** Diagnostic snapshot of the bridge — surfaced by `redfin_healthcheck`. */
+  bridgeStatus(): BridgeStatus {
+    return this.transport.status();
   }
 
   /**
