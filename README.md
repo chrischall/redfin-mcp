@@ -20,6 +20,7 @@ Redfin real-estate access as an MCP server for Claude — search listings, fetch
 | `redfin_get_saved_homes` | Your favorited homes — flattened across all collections, with primary photo URLs constructed from each home's CDN handles. | ✓ |
 | `redfin_get_saved_searches` | Your saved searches with region URLs and display text. | ✓ |
 | `redfin_calculate_mortgage` | Local PITI calculator — principal+interest, taxes, insurance, HOA, PMI (no network). | |
+| `redfin_healthcheck` | End-to-end bridge check — round-trips `/robots.txt` and reports which hop failed (bridge down vs. extension not connected vs. Redfin-side issue). Call when other tools time out. | |
 
 ## Acknowledgement of Terms
 
