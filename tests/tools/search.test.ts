@@ -519,4 +519,182 @@ describe('redfin_search_properties tool', () => {
     expect(text).toMatch(/all 2 returned result/i); // covers the "all N" wording nit
     expect(text).toMatch(/Ipswich/);
   });
+
+  it('CANONICAL #46 REGRESSION: ZIP 28746 returning Seattle (WA) homes → error loudly', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          sections: [
+            {
+              name: 'Places',
+              rows: [
+                {
+                  id: '6_999',
+                  name: 'Fremont',
+                  subName: 'Seattle, WA, USA',
+                  url: '/neighborhood/999/WA/Seattle/Fremont',
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          homes: [
+            { propertyId: 1, city: 'Seattle', state: 'WA' },
+            { propertyId: 2, city: 'Seattle', state: 'WA' },
+          ],
+        },
+      });
+    const result = await harness.callTool('redfin_search_properties', {
+      location: '28746',
+    });
+    expect(result.isError).toBeTruthy();
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toMatch(/ZIP 28746 not in Redfin's coverage/);
+    expect(text).toMatch(/Seattle/);
+    expect(text).toMatch(/NC/); // suggested plausible state
+  });
+
+  it('emits coverage: "full" when gis returns homes', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          sections: [
+            {
+              name: 'Places',
+              rows: [
+                {
+                  id: '6_30749',
+                  name: 'New York',
+                  subName: 'New York, NY, USA',
+                  url: '/city/30749/NY/New-York',
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          homes: [{ propertyId: 1, city: 'New York', state: 'NY', price: 100 }],
+        },
+      });
+    const r = await harness.callTool('redfin_search_properties', {
+      location: 'New York, NY',
+    });
+    const parsed = parseToolResult<{ coverage: string; result_cap_hit: boolean }>(
+      r
+    );
+    expect(parsed.coverage).toBe('full');
+    expect(parsed.result_cap_hit).toBe(false);
+  });
+
+  it('emits coverage: "none" when gis empty and no Addresses match (#47)', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          sections: [
+            {
+              name: 'Places',
+              rows: [
+                {
+                  id: '2_1234',
+                  name: 'Lake Lure',
+                  subName: 'Lake Lure, NC, USA',
+                  url: '/city/1234/NC/Lake-Lure',
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: { homes: [] },
+      });
+    const r = await harness.callTool('redfin_search_properties', {
+      location: 'Lake Lure, NC',
+    });
+    const parsed = parseToolResult<{ coverage: string; notice?: string }>(r);
+    expect(parsed.coverage).toBe('none');
+    expect(parsed.notice).toMatch(/coverage: none/);
+  });
+
+  it('emits coverage: "profile_only" when gis is missing but Addresses resolved', async () => {
+    // resolveBoth returns { region: null, address: {...} } — handler
+    // falls into the addressOnlyResult branch. The mock returns
+    // ONE response (autocomplete) since the gis path isn't taken.
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        sections: [
+          {
+            name: 'Addresses',
+            rows: [
+              {
+                name: '268 Mallard Rd',
+                subName: 'Lake Lure, NC 28746',
+                url: '/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const r = await harness.callTool('redfin_search_properties', {
+      location: '268 Mallard Rd Lake Lure NC 28746',
+    });
+    const parsed = parseToolResult<{ coverage: string; resolved_as: string }>(r);
+    expect(parsed.resolved_as).toBe('address');
+    expect(parsed.coverage).toBe('profile_only');
+  });
+
+  it('result_cap_hit: true when gis returns 350 results AND no client-side limit truncation', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          sections: [
+            {
+              name: 'Places',
+              rows: [
+                {
+                  id: '6_30749',
+                  name: 'New York',
+                  subName: 'New York, NY, USA',
+                  url: '/city/30749/NY/New-York',
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          homes: Array.from({ length: 350 }, (_, i) => ({
+            propertyId: i + 1,
+            city: 'New York',
+            state: 'NY',
+            price: 100,
+          })),
+        },
+      });
+    const r = await harness.callTool('redfin_search_properties', {
+      location: 'New York, NY',
+      limit: 400,
+    });
+    const parsed = parseToolResult<{ result_cap_hit: boolean; notice?: string }>(
+      r
+    );
+    expect(parsed.result_cap_hit).toBe(true);
+    expect(parsed.notice).toMatch(/hard cap/);
+  });
 });
