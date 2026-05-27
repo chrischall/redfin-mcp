@@ -66,7 +66,7 @@ export function registerCompareTools(
     {
       title: 'Compare multiple Redfin properties side-by-side',
       description:
-        "Fetch and compare 2 or more Redfin properties side-by-side. Provide an array of targets, each either a `url` or a `property_id`+`listing_id` pair. Returns a compact summary table aligned by field (price, beds/baths, sqft, year built, etc.) plus the full per-property record. Errors for individual properties are captured per-row. Calls are concurrent.",
+        "Fetch and compare 2 or more Redfin properties side-by-side. Provide an array of targets, each either a `url` or a `property_id`+`listing_id` pair. Returns a compact summary table aligned by field (price, beds/baths, sqft, year built, etc.) plus the full per-property record. Each record's `extracted_features` (lake_front, hot_tub, basement, furnished, dock, community) is always included. The raw marketing description is omitted by default — opt in with `include_description: true`. Errors for individual properties are captured per-row. Calls are concurrent.",
       annotations: {
         title: 'Compare multiple Redfin properties side-by-side',
         readOnlyHint: true,
@@ -90,9 +90,15 @@ export function registerCompareTools(
           .min(2)
           .max(8)
           .describe('Array of 2–8 properties to compare'),
+        include_description: z
+          .boolean()
+          .optional()
+          .describe(
+            'Include each property\'s raw marketing/public-remarks description. Default false to save context — `extracted_features` always carries the structured signal.'
+          ),
       },
     },
-    async ({ targets }) => {
+    async ({ targets, include_description }) => {
       const results = await Promise.all(
         (targets as CompareTarget[]).map(
           async (t): Promise<ComparePerProperty> => {
@@ -117,7 +123,9 @@ export function registerCompareTools(
               return {
                 property_id: ids.propertyId,
                 url: canonicalUrl,
-                property: format(initial, atf, canonicalUrl),
+                property: format(initial, atf, canonicalUrl, {
+                  includeDescription: include_description === true,
+                }),
               };
             } catch (e) {
               return {

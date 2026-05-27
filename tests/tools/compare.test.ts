@@ -145,4 +145,55 @@ describe('redfin_compare_properties tool', () => {
     expect(parsed.results[1].error).toMatch(/boom/);
     expect(parsed.results[2].property?.price).toBe(500);
   });
+
+  it('omits description by default and surfaces extracted_features per record', async () => {
+    mockFetchStingrayJson.mockResolvedValue({
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: { streetAddress: 'x', city: 'X', state: 'NY', zip: '11111' },
+        mainHouseInfo: {
+          publicRemarksParagraph: 'Lakefront with private dock.',
+        },
+      },
+    });
+    const r = await harness.callTool('redfin_compare_properties', {
+      targets: [
+        { property_id: 1, listing_id: 10 },
+        { property_id: 2, listing_id: 20 },
+      ],
+    });
+    const parsed = parseToolResult<{
+      results: Array<{
+        property?: {
+          description?: string;
+          extracted_features?: { lake_front: boolean; dock: string | null };
+        };
+      }>;
+    }>(r);
+    expect(parsed.results[0].property?.description).toBeUndefined();
+    expect(parsed.results[0].property?.extracted_features?.lake_front).toBe(true);
+    expect(parsed.results[0].property?.extracted_features?.dock).toBe('private');
+  });
+
+  it('emits description on every row when include_description=true', async () => {
+    mockFetchStingrayJson.mockResolvedValue({
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: { streetAddress: 'x', city: 'X', state: 'NY', zip: '11111' },
+        mainHouseInfo: { publicRemarksParagraph: 'Cozy cabin.' },
+      },
+    });
+    const r = await harness.callTool('redfin_compare_properties', {
+      targets: [
+        { property_id: 1, listing_id: 10 },
+        { property_id: 2, listing_id: 20 },
+      ],
+      include_description: true,
+    });
+    const parsed = parseToolResult<{
+      results: Array<{ property?: { description?: string } }>;
+    }>(r);
+    expect(parsed.results[0].property?.description).toBe('Cozy cabin.');
+    expect(parsed.results[1].property?.description).toBe('Cozy cabin.');
+  });
 });
