@@ -30,7 +30,7 @@ import { registerPhotosTools } from './tools/photos.js';
 import { registerGetByAddressTools } from './tools/get-by-address.js';
 import { registerHealthcheckTools } from './tools/healthcheck.js';
 
-const VERSION = '0.4.5'; // x-release-please-version
+const VERSION = '0.5.0'; // x-release-please-version
 
 const port = process.env.REDFIN_WS_PORT
   ? Number(process.env.REDFIN_WS_PORT)

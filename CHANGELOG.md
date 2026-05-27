@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/chrischall/redfin-mcp/compare/v0.4.5...v0.5.0) (2026-05-26)
+
+
+### Features
+
+* add redfin_get_by_address and fix search address resolution ([#29](https://github.com/chrischall/redfin-mcp/issues/29)) ([a8489ef](https://github.com/chrischall/redfin-mcp/commit/a8489ef1d307dad42034976fba82c33ae8b54881))
+* add redfin_healthcheck for end-to-end bridge diagnostics ([#27](https://github.com/chrischall/redfin-mcp/issues/27)) ([bb6946f](https://github.com/chrischall/redfin-mcp/commit/bb6946f14324b6e2d6d0ee574f08306b9bc9d5f8))
+
+
+### Bug Fixes
+
+* **properties:** return canonical URL when caller provides IDs only ([#30](https://github.com/chrischall/redfin-mcp/issues/30)) ([6dd51a2](https://github.com/chrischall/redfin-mcp/commit/6dd51a24e9b9feb1e89286807aa2e84e2527a179))
+
 ## [0.4.5](https://github.com/chrischall/redfin-mcp/compare/v0.4.4...v0.4.5) (2026-05-26)
 
 
