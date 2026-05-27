@@ -105,4 +105,63 @@ describe('FetchproxyTransport', () => {
     await t.close();
     expect(inner.close).toHaveBeenCalledTimes(1);
   });
+
+  it('LAZY REVIVE (#55): retries once on content_script_unreachable, succeeds on second attempt', async () => {
+    const t = new FetchproxyTransport({ version: '0.0.0' });
+    const inner = stubInner();
+    let n = 0;
+    inner.fetch.mockImplementation(async () => {
+      n++;
+      if (n === 1) {
+        return {
+          ok: false,
+          kind: 'content_script_unreachable',
+          error: 'service worker evicted',
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        body: 'recovered',
+        url: 'https://www.redfin.com/x',
+      };
+    });
+    installInner(t, inner);
+
+    const result = await t.fetch({ path: '/x', method: 'GET' });
+    expect(result.body).toBe('recovered');
+    expect(inner.fetch).toHaveBeenCalledTimes(2);
+  }, 10_000); // wraps the 2s lazy-revive sleep
+
+  it('LAZY REVIVE (#55): surfaces FetchproxyBridgeDownError when the retry also fails', async () => {
+    const t = new FetchproxyTransport({ version: '0.0.0' });
+    const inner = stubInner();
+    inner.fetch.mockResolvedValue({
+      ok: false,
+      kind: 'content_script_unreachable',
+      error: 'service worker still evicted',
+    });
+    installInner(t, inner);
+
+    await expect(t.fetch({ path: '/x', method: 'GET' })).rejects.toThrow(
+      /fetchproxy bridge down/
+    );
+    // First call + one retry.
+    expect(inner.fetch).toHaveBeenCalledTimes(2);
+    // Hint mentions the auto-retry and the manual recovery options.
+    await expect(t.fetch({ path: '/x', method: 'GET' })).rejects.toThrow(
+      /auto-retries once/
+    );
+  }, 30_000);
+
+  it('does NOT retry on non-bridge_down failures', async () => {
+    const t = new FetchproxyTransport({ version: '0.0.0' });
+    const inner = stubInner();
+    inner.fetch.mockResolvedValue({ ok: false, error: 'something else' });
+    installInner(t, inner);
+    await expect(t.fetch({ path: '/x', method: 'GET' })).rejects.toThrow(
+      /something else/
+    );
+    expect(inner.fetch).toHaveBeenCalledTimes(1);
+  });
 });

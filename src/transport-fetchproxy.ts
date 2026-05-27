@@ -71,10 +71,13 @@ export class FetchproxyBridgeDownError extends Error {
     const hint =
       `the fetchproxy browser extension's service worker is not ` +
       `responding ("${args.originalError}"). Chrome evicts extension ` +
-      `service workers after ~30s idle by default. Wake it by clicking ` +
-      `the fetchproxy extension icon (or by opening any redfin.com tab ` +
-      `and reloading), then retry. If it keeps happening, the extension ` +
-      `may need to be reloaded from chrome://extensions.`;
+      `service workers after ~30s idle by default — redfin-mcp now auto-` +
+      `retries once after a brief delay (issue #55), but this error means ` +
+      `the second attempt also failed. To wake the extension: (a) click the ` +
+      `fetchproxy toolbar icon, (b) open any redfin.com tab and reload, or ` +
+      `(c) open chrome://extensions and toggle fetchproxy off + on. ` +
+      `If the extension is missing entirely, install it from ` +
+      `https://github.com/chrischall/fetchproxy.`;
     super(
       `fetchproxy bridge down: ${args.url} after ${args.elapsedMs}ms ` +
         `(role=${args.role ?? 'null'} port=${args.port}). ${hint}`
@@ -211,7 +214,32 @@ export class FetchproxyTransport implements RedfinTransport {
     this.consecutiveFailures += 1;
   }
 
+  /**
+   * Retry-once wrapper around {@link fetchOnce}. Issue #55: Chrome
+   * evicts the fetchproxy extension's service worker after ~30s idle,
+   * so the FIRST request after an idle period often returns a
+   * `content_script_unreachable` error even though the extension comes
+   * back online almost immediately on the next attempt. Lazy revive:
+   * on `FetchproxyBridgeDownError`, sleep briefly and try once more.
+   * Surfaces the second failure to the caller if it persists.
+   */
   async fetch(init: FetchInit): Promise<FetchResult> {
+    try {
+      return await this.fetchOnce(init);
+    } catch (err) {
+      if (err instanceof FetchproxyBridgeDownError) {
+        log('fetch:bridge-down-retry', { url: err.url });
+        // Give Chrome ~2s to wake the service worker on the next fetch
+        // arrival. Empirically shorter delays sometimes still see the
+        // SW as evicted.
+        await new Promise((r) => setTimeout(r, 2000));
+        return await this.fetchOnce(init);
+      }
+      throw err;
+    }
+  }
+
+  private async fetchOnce(init: FetchInit): Promise<FetchResult> {
     const url = init.path.startsWith('http')
       ? init.path
       : `${REDFIN_ORIGIN}${init.path}`;
