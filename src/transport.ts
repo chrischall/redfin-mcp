@@ -28,25 +28,13 @@ export interface FetchResult {
   url: string;
 }
 
-/** Diagnostic snapshot returned by `RedfinTransport.status()`. */
-export interface BridgeStatus {
-  /** Role the underlying server elected (host vs peer). `null` until `start()` resolves. */
-  role: 'host' | 'peer' | null;
-  /** The WebSocket port. Hosts bind it; peers tunnel through it. */
-  port: number;
-  /** MCP server version announced to the extension. */
-  serverVersion: string;
-  /** Default per-request timeout in ms. */
-  fetchTimeoutMs: number;
-  /** Unix-ms timestamp of the last successful round-trip. `null` until the first success. */
-  lastSuccessAt: number | null;
-  /** Unix-ms timestamp of the last failed round-trip. `null` until the first failure. */
-  lastFailureAt: number | null;
-  /** Short message describing the most recent failure. `null` until the first failure. */
-  lastFailureReason: string | null;
-  /** Number of failures since the last success (or since process start, if none). */
-  consecutiveFailures: number;
-}
+/**
+ * Diagnostic snapshot returned by `RedfinTransport.status()`. As of
+ * 0.8.0 the underlying fetchproxy server emits a `BridgeHealth` that
+ * is the canonical shape — `BridgeStatus` is now a type alias so any
+ * downstream code that still imports it from here keeps working.
+ */
+export type BridgeStatus = import('@fetchproxy/server').BridgeHealth;
 
 export interface RedfinTransport {
   /** Bring the transport up. Idempotent. */
