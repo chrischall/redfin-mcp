@@ -2,7 +2,8 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
-import { resolveAddress } from '../autocomplete.js';
+import { resolveAddress, type RedfinAddress } from '../autocomplete.js';
+import { expandAddressVariants } from '../suffix.js';
 
 /**
  * `redfin_get_by_address`: resolve a free-text address to a Redfin
@@ -50,14 +51,42 @@ export function registerGetByAddressTools(
       },
     },
     async (input) => {
-      const query = [input.address, input.city, input.state, input.zip]
+      // Build the canonical query, then expand suffix variants on the
+      // STREET PORTION ONLY. The first variant is the input as-typed;
+      // alternates swap the street-suffix between abbreviated and
+      // full forms. We try them in order and stop on the first hit.
+      // (#43 — `268 Mallard Rd` didn't resolve, `268 Mallard Road` did.)
+      const cityStateZip = [input.city, input.state, input.zip]
         .filter((s): s is string => Boolean(s && s.trim()))
         .join(' ');
-      const match = await resolveAddress(client, query);
+      const addressVariants = expandAddressVariants(input.address);
+      const candidates = addressVariants.map((a) =>
+        cityStateZip ? `${a} ${cityStateZip}` : a
+      );
+      // Top-level query used for response payload + error case logging.
+      const query = candidates[0] ?? input.address;
+      const attempts: string[] = [];
+      let match: RedfinAddress | null = null;
+      let matchedVariant: string | undefined;
+      for (const variant of candidates) {
+        attempts.push(variant);
+        // Pass each variant through autocomplete. Wrap individual
+        // failures so one bad candidate doesn't kill the loop.
+        try {
+          match = await resolveAddress(client, variant);
+        } catch {
+          match = null;
+        }
+        if (match) {
+          matchedVariant = variant;
+          break;
+        }
+      }
       if (!match) {
         return textResult({
           resolved: false,
           query,
+          attempts,
         });
       }
       return textResult({
@@ -68,6 +97,13 @@ export function registerGetByAddressTools(
         city: match.city,
         state: match.state,
         zip: match.zip,
+        // When the input as-typed matched, omit the variant signal —
+        // the common case stays terse. When a suffix-swap variant
+        // matched, surface it so the caller can record which form
+        // Redfin recognized.
+        ...(matchedVariant && matchedVariant !== query
+          ? { matched_variant: matchedVariant }
+          : {}),
       });
     }
   );
