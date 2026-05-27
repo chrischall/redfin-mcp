@@ -101,6 +101,23 @@ describe('formatClimate', () => {
     expect(out.fire).toBeUndefined();
     expect(out.heat).toBeUndefined();
   });
+
+  it('returns available: false when blocks parse but contain no score field', () => {
+    // Regression: a page embedding `"floodData":{"fsid":123}` (no
+    // floodFactor) used to produce { available: true, not_covered: [...] }
+    // with zero risk blocks. Tighten `hasAny` to require at least one
+    // score field.
+    const out = formatClimate(
+      { fsid: 123 } as never,
+      { fsid: 123 } as never,
+      { fsid: 123 } as never
+    );
+    expect(out.available).toBe(false);
+    expect(out.reason).toBe('no_first_street_data');
+    expect(out.flood).toBeUndefined();
+    expect(out.fire).toBeUndefined();
+    expect(out.heat).toBeUndefined();
+  });
 });
 
 describe('redfin_get_climate_risk tool', () => {
@@ -223,6 +240,21 @@ describe('redfin_get_climate_risk_bulk tool (#52)', () => {
     expect(parsed.results[0].result?.cluster_id).toBe('371110304002');
     expect(parsed.results[1].error).toMatch(/boom/);
     expect(parsed.results[2].result?.available).toBe(false);
+  });
+
+  it('normalizes URLs to absolute form on the error path (matches success path)', async () => {
+    mockFetchHtml.mockRejectedValueOnce(new Error('boom'));
+    const r = await bulkHarness.callTool('redfin_get_climate_risk_bulk', {
+      urls: ['/NY/Brooklyn/foo/home/42'],
+    });
+    const parsed = parseToolResult<{
+      results: Array<{ url: string; error?: string }>;
+    }>(r);
+    expect(parsed.results[0].error).toMatch(/boom/);
+    // Should be normalized to full https URL, matching success rows.
+    expect(parsed.results[0].url).toBe(
+      'https://www.redfin.com/NY/Brooklyn/foo/home/42'
+    );
   });
 
   it('emits cluster_summary when 2+ properties share a cluster_id', async () => {

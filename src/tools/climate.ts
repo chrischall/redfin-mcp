@@ -3,34 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import { urlToPath } from '../url.js';
-
-/**
- * Local concurrency helper for the bulk climate fetch (#52). Same
- * shape as the helper in src/tools/bulk-get.ts; duplicated here to
- * keep the climate PR self-contained when stacked separately. Once
- * both PRs land we can refactor to a shared module.
- */
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T, index: number) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let cursor = 0;
-  const next = async (): Promise<void> => {
-    while (true) {
-      const i = cursor++;
-      if (i >= items.length) return;
-      results[i] = await fn(items[i], i);
-    }
-  };
-  const workers: Promise<void>[] = [];
-  for (let i = 0; i < Math.min(concurrency, items.length); i++) {
-    workers.push(next());
-  }
-  await Promise.all(workers);
-  return results;
-}
+import { mapWithConcurrency } from './bulk-get.js';
 
 /**
  * Redfin's homedetails page server-renders climate risk data from
@@ -220,7 +193,14 @@ export function formatClimate(
   heat: HeatData | null,
   opts: { clusterId?: string } = {}
 ): ClimateRiskReport {
-  const hasAny = !!flood || !!fire || !!heat;
+  // A parsed block alone isn't enough — Redfin sometimes embeds a
+  // climate object with only an `fsid` and no factor scores. Require
+  // at least one factor field actually be a number, matching the
+  // downstream blocks below which are emitted on the same guard.
+  const hasAny =
+    (!!flood && typeof flood.floodFactor === 'number') ||
+    (!!fire && typeof fire.fireFactor === 'number') ||
+    (!!heat && typeof heat.heatFactor === 'number');
   const out: ClimateRiskReport = {
     available: hasAny,
     not_covered: ['landslide'],
@@ -305,10 +285,20 @@ interface PerPropertyClimateResult {
   error?: string;
 }
 
+function normalizeClimateUrl(url: string): string {
+  if (url.startsWith('http')) return url;
+  try {
+    return `https://www.redfin.com${urlToPath(url)}`;
+  } catch {
+    return url;
+  }
+}
+
 async function fetchOneClimate(
   client: RedfinClient,
   url: string
 ): Promise<PerPropertyClimateResult> {
+  const normalizedUrl = normalizeClimateUrl(url);
   try {
     const path = urlToPath(url);
     const html = await client.fetchHtml(path);
@@ -317,12 +307,12 @@ async function fetchOneClimate(
     const heat = extractClimateBlock(html, 'heatData') as HeatData | null;
     const clusterId = extractClusterId(html);
     return {
-      url: url.startsWith('http') ? url : `https://www.redfin.com${path}`,
+      url: normalizedUrl,
       result: formatClimate(flood, fire, heat, { clusterId }),
     };
   } catch (e) {
     return {
-      url,
+      url: normalizedUrl,
       error: (e as Error).message,
     };
   }
