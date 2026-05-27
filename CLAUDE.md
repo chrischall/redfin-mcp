@@ -79,7 +79,8 @@ No env vars required. Auth lives in the user's signed-in redfin.com tab via the 
 Optional:
 
 ```
-REDFIN_WS_PORT=37149   # override the fetchproxy WebSocket port
+REDFIN_WS_PORT=37149                            # override the fetchproxy WebSocket port
+REDFIN_COMMUNITIES_FILE=/path/to/communities.json  # override community vocabulary (JSON string array)
 ```
 
 ## Conventions
