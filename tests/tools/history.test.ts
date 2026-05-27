@@ -3,6 +3,8 @@ import type { RedfinClient } from '../../src/client.js';
 import {
   formatPriceEvent,
   formatTaxEvent,
+  mapEventType,
+  normalizeEvents,
   registerHistoryTools,
 } from '../../src/tools/history.js';
 import { createTestHarness, parseToolResult } from '../helpers.js';
@@ -215,5 +217,126 @@ describe('redfin_get_price_history tool', () => {
     const parsed = parseToolResult<{ url: string; price_events: unknown[] }>(r);
     expect(parsed.url).toBe('https://www.redfin.com/home/42');
     expect(parsed.price_events.length).toBe(1);
+  });
+
+  it('surfaces events_normalized alongside price_events (#48)', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        // BTF
+        resultCode: 0,
+        payload: {
+          propertyHistoryInfo: {
+            events: [
+              {
+                eventDescription: 'Listed',
+                eventDate: Date.parse('2024-01-01'),
+                price: 500_000,
+              },
+              {
+                eventDescription: 'Price Changed',
+                eventDate: Date.parse('2024-02-01'),
+                price: 480_000,
+              },
+              {
+                eventDescription: 'Sold (MLS)',
+                eventDate: Date.parse('2024-03-01'),
+                price: 475_000,
+              },
+            ],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        // ATF (parallel)
+        resultCode: 0,
+        payload: {
+          addressSectionInfo: {
+            streetAddress: '1 Main St',
+            city: 'X',
+            state: 'NY',
+            zip: '11111',
+          },
+        },
+      });
+    const r = await harness.callTool('redfin_get_price_history', {
+      property_id: 12345,
+      listing_id: 99,
+    });
+    const parsed = parseToolResult<{
+      events_normalized: Array<{
+        type: string;
+        price?: number;
+        price_change_pct?: number;
+      }>;
+    }>(r);
+    expect(parsed.events_normalized).toHaveLength(3);
+    expect(parsed.events_normalized[0].type).toBe('Listed');
+    expect(parsed.events_normalized[1].type).toBe('PriceChange');
+    expect(parsed.events_normalized[2].type).toBe('Sold');
+    // (480k - 500k) / 500k * 100 = -4.0
+    expect(parsed.events_normalized[1].price_change_pct).toBe(-4.0);
+  });
+});
+
+describe('mapEventType (#48 shared enum)', () => {
+  it('maps Redfin event strings to the shared enum', () => {
+    expect(mapEventType('Listed')).toBe('Listed');
+    expect(mapEventType('Relisted')).toBe('Relisted');
+    expect(mapEventType('Price Change')).toBe('PriceChange');
+    expect(mapEventType('Price Reduction')).toBe('PriceChange');
+    expect(mapEventType('Pending')).toBe('Pending');
+    expect(mapEventType('Contingent')).toBe('Contingent');
+    expect(mapEventType('Sold (MLS)')).toBe('Sold');
+    expect(mapEventType('Sold (Public Records)')).toBe('Sold');
+    expect(mapEventType('Withdrawn')).toBe('Withdrawn');
+    expect(mapEventType('Delisted')).toBe('Delisted');
+  });
+
+  it('is case-insensitive', () => {
+    expect(mapEventType('SOLD')).toBe('Sold');
+    expect(mapEventType('listed')).toBe('Listed');
+  });
+
+  it('PIN: "Relisted" does NOT match as "Listed" (substring-style)', () => {
+    expect(mapEventType('Relisted')).toBe('Relisted');
+  });
+
+  it('returns "Unknown" for unmapped strings', () => {
+    expect(mapEventType('Mystery event')).toBe('Unknown');
+    expect(mapEventType(undefined)).toBe('Unknown');
+  });
+});
+
+describe('normalizeEvents (#48 cross-MCP shape)', () => {
+  it('sorts oldest-first and computes price_change_pct against the prior priced event', () => {
+    const out = normalizeEvents([
+      {
+        eventDescription: 'Sold (MLS)',
+        eventDate: Date.parse('2024-03-01'),
+        price: 475_000,
+      },
+      {
+        eventDescription: 'Listed',
+        eventDate: Date.parse('2024-01-01'),
+        price: 500_000,
+      },
+      {
+        eventDescription: 'Price Change',
+        eventDate: Date.parse('2024-02-01'),
+        price: 480_000,
+      },
+    ]);
+    expect(out.map((e) => e.type)).toEqual(['Listed', 'PriceChange', 'Sold']);
+    expect(out[0].price_change_pct).toBeUndefined(); // first event has no prior
+    expect(out[1].price_change_pct).toBe(-4.0);
+    expect(out[2].price_change_pct).toBeCloseTo(-1.04, 1);
+  });
+
+  it('preserves raw_event so callers can keep Redfin\'s verbatim labels', () => {
+    const out = normalizeEvents([
+      { eventDescription: 'Sold (Public Records)', eventDate: 1, price: 1 },
+    ]);
+    expect(out[0].raw_event).toBe('Sold (Public Records)');
+    expect(out[0].type).toBe('Sold');
   });
 });

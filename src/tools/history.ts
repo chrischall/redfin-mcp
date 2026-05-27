@@ -69,6 +69,104 @@ export interface FormattedPriceEvent {
   source_id?: string;
 }
 
+/**
+ * Shared normalized event type — same enum used across sibling MCPs
+ * (zillow, compass, onehome, homes-com) so downstream code doesn't
+ * need per-MCP adapters. See issue #48.
+ */
+export type NormalizedEventType =
+  | 'Listed'
+  | 'PriceChange'
+  | 'Pending'
+  | 'Contingent'
+  | 'Sold'
+  | 'Withdrawn'
+  | 'Relisted'
+  | 'Delisted'
+  | 'Unknown';
+
+export interface NormalizedEvent {
+  date?: string;
+  type: NormalizedEventType;
+  /** Original Redfin event description, preserved for callers that
+   * need the verbatim label. */
+  raw_event?: string;
+  price?: number;
+  /** Percent change from the previous priced event in the series.
+   * Computed by `normalizeEvents`, not by the per-event mapper. */
+  price_change_pct?: number;
+  dom?: number;
+  source_mls?: string;
+}
+
+/**
+ * Map Redfin's free-text `eventDescription` to the shared enum. Order
+ * matters — "Listed" matches BOTH "Listed" and "Relisted", so the
+ * Relisted check must come first. Same for "Sold (MLS)" / "Sold
+ * (Public Records)" → "Sold".
+ *
+ * The mapping is intentionally generous: any input we can't classify
+ * returns `"Unknown"`, and the original string remains in
+ * `raw_event` for callers who want it.
+ */
+export function mapEventType(description: string | undefined): NormalizedEventType {
+  if (!description) return 'Unknown';
+  const d = description.toLowerCase();
+  if (/relist/.test(d)) return 'Relisted';
+  if (/withdraw/.test(d)) return 'Withdrawn';
+  if (/delist/.test(d)) return 'Delisted';
+  if (/sold/.test(d)) return 'Sold';
+  if (/pending/.test(d)) return 'Pending';
+  if (/contingent/.test(d)) return 'Contingent';
+  if (/price (?:change|reduction|increase|reduced)/.test(d)) return 'PriceChange';
+  if (/listed/.test(d)) return 'Listed';
+  return 'Unknown';
+}
+
+/**
+ * Build the events_normalized view from raw price-history events:
+ * - Map each event's `eventDescription` to the shared enum.
+ * - Compute `price_change_pct` against the previous PRICED event in
+ *   the series (events without a price don't contribute).
+ * - Carry `raw_event`, `dom`, `price`, and the source MLS.
+ *
+ * Events are sorted oldest-first inside the function so the
+ * percent-change math works against the previous event in time order;
+ * the caller can re-sort the returned array if it prefers
+ * newest-first.
+ */
+export function normalizeEvents(
+  raw: PropertyHistoryEvent[]
+): NormalizedEvent[] {
+  const sorted = [...raw].sort(
+    (a, b) => (a.eventDate ?? 0) - (b.eventDate ?? 0)
+  );
+  let lastPrice: number | null = null;
+  const out: NormalizedEvent[] = [];
+  for (const e of sorted) {
+    const event: NormalizedEvent = {
+      date:
+        typeof e.eventDate === 'number'
+          ? new Date(e.eventDate).toISOString().slice(0, 10)
+          : undefined,
+      type: mapEventType(e.eventDescription),
+      raw_event: e.eventDescription,
+      price: typeof e.price === 'number' ? e.price : undefined,
+      dom: e.daysOnMarket,
+      source_mls: e.source,
+    };
+    if (typeof e.price === 'number') {
+      if (lastPrice !== null && lastPrice !== 0) {
+        event.price_change_pct =
+          Math.round(((e.price - lastPrice) / lastPrice) * 1000) / 10;
+      }
+      lastPrice = e.price;
+    }
+    out.push(event);
+  }
+  return out;
+}
+
 export interface FormattedTaxEvent {
   year?: number;
   taxes_paid?: number;
@@ -166,15 +264,18 @@ export function registerHistoryTools(
         property_id,
         listing_id,
       });
-      const priceEvents = (payload?.propertyHistoryInfo?.events ?? []).map(
-        formatPriceEvent
-      );
+      const rawEvents = payload?.propertyHistoryInfo?.events ?? [];
+      const priceEvents = rawEvents.map(formatPriceEvent);
+      // Normalized view — same enum across sibling MCPs (#48). The
+      // raw price_events stay for back-compat.
+      const eventsNormalized = normalizeEvents(rawEvents);
       const taxEvents = (payload?.publicRecordsInfo?.allTaxInfo ?? []).map(
         formatTaxEvent
       );
       return textResult({
         url: canonicalUrl,
         price_events: priceEvents,
+        events_normalized: eventsNormalized,
         tax_events: taxEvents,
       });
     }
