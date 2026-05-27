@@ -31,6 +31,7 @@ import { registerGetByAddressTools } from './tools/get-by-address.js';
 import { registerHealthcheckTools } from './tools/healthcheck.js';
 import { registerBulkGetTools } from './tools/bulk-get.js';
 import { registerResolveAddressesTools } from './tools/resolve-addresses.js';
+import { registerSessionTools } from './tools/sessions.js';
 
 const VERSION = '0.5.0'; // x-release-please-version
 
@@ -60,6 +61,7 @@ registerGetByAddressTools(server, client);
 registerHealthcheckTools(server, client);
 registerBulkGetTools(server, client);
 registerResolveAddressesTools(server, client);
+registerSessionTools(server);
 
 console.error(
   `[redfin-mcp] v${VERSION} — WebSocket bridge via @fetchproxy/server on 127.0.0.1:${port ?? 37149}. ` +
