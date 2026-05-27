@@ -3,6 +3,7 @@ import type { RedfinClient } from '../../src/client.js';
 import { registerHealthcheckTools } from '../../src/tools/healthcheck.js';
 import {
   FetchproxyBridgeDownError,
+  FetchproxyProtocolError,
   FetchproxyTimeoutError,
 } from '../../src/transport-fetchproxy.js';
 import type { BridgeStatus } from '../../src/transport.js';
@@ -72,9 +73,6 @@ describe('redfin_healthcheck tool', () => {
         new FetchproxyTimeoutError({
           url: 'https://www.redfin.com/robots.txt',
           timeoutMs: 25,
-          elapsedMs: 28,
-          role: 'peer',
-          port: 37200,
         })
       ),
     });
@@ -104,11 +102,8 @@ describe('redfin_healthcheck tool', () => {
       },
       fetchHtml: vi.fn().mockRejectedValue(
         new FetchproxyBridgeDownError({
-          url: 'https://www.redfin.com/robots.txt',
-          elapsedMs: 11,
-          role: null,
-          port: 37149,
           originalError: 'Could not establish connection.',
+          retryAttempted: true,
         })
       ),
     });
@@ -134,9 +129,6 @@ describe('redfin_healthcheck tool', () => {
         new FetchproxyTimeoutError({
           url: 'https://www.redfin.com/robots.txt',
           timeoutMs: 25,
-          elapsedMs: 28,
-          role: null,
-          port: 37149,
         })
       ),
     });
@@ -154,13 +146,13 @@ describe('redfin_healthcheck tool', () => {
     expect(parsed.hint).toMatch(/never bound a role/);
   });
 
-  it('classifies a plain "fetchproxy transport error" as kind=transport', async () => {
+  it('classifies a generic FetchproxyProtocolError as kind=transport', async () => {
     const client = stubClient({
       fetchHtml: vi
         .fn()
         .mockRejectedValue(
-          new Error(
-            'fetchproxy transport error after 12ms (role=host): extension offline'
+          new FetchproxyProtocolError(
+            'tab_fetch_failed: no signed-in redfin.com tab'
           )
         ),
     });
@@ -179,12 +171,9 @@ describe('redfin_healthcheck tool', () => {
       status: { role: 'peer', port: 37149, serverVersion: '0.5.0' },
       fetchHtml: vi.fn().mockRejectedValue(
         new FetchproxyBridgeDownError({
-          url: 'https://www.redfin.com/robots.txt',
-          elapsedMs: 14,
-          role: 'peer',
-          port: 37149,
           originalError:
             'tab fetch failed: Error: Could not establish connection. Receiving end does not exist.',
+          retryAttempted: true,
         })
       ),
     });

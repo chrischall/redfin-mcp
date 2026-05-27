@@ -1,21 +1,34 @@
-// Adapter-level tests for FetchproxyTransport. We don't bring up a real
-// WebSocket here — the protocol-level tests live in @fetchproxy/server.
-// What we verify is the path → URL prepending and the discriminated-
-// union mapping (ok:true → triple, ok:false → throw).
+// Adapter-level tests for FetchproxyTransport. As of @fetchproxy/server
+// 0.8.0, lazy-revive, per-request timeouts, and freshness counters are
+// owned by the server itself (covered by its own test suite). What's
+// left here is the thin adapter: URL building via inner.request() and
+// the BridgeStatus snapshot pulled from inner.bridgeHealth().
 import { describe, it, expect, vi } from 'vitest';
 import { FetchproxyTransport } from '../src/transport-fetchproxy.js';
 
 type Inner = {
   listen: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
-  fetch: ReturnType<typeof vi.fn>;
+  request: ReturnType<typeof vi.fn>;
+  bridgeHealth: ReturnType<typeof vi.fn>;
+  role: 'host' | 'peer' | null;
 };
 
 function stubInner(): Inner {
   return {
     listen: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
-    fetch: vi.fn(),
+    request: vi.fn(),
+    bridgeHealth: vi.fn().mockReturnValue({
+      role: null,
+      port: 37149,
+      lastSuccessAt: null,
+      lastFailureAt: null,
+      lastFailureReason: null,
+      consecutiveFailures: 0,
+      lastExtensionMessageAt: null,
+    }),
+    role: null,
   };
 }
 
@@ -25,47 +38,42 @@ function installInner(t: FetchproxyTransport, inner: Inner): void {
 }
 
 describe('FetchproxyTransport', () => {
-  it('prepends https://www.redfin.com to relative paths', async () => {
+  it('passes path + method + subdomain:www to inner.request', async () => {
     const t = new FetchproxyTransport({ version: '0.0.0' });
     const inner = stubInner();
-    inner.fetch.mockResolvedValue({
-      ok: true,
+    inner.request.mockResolvedValue({
       status: 200,
       body: 'x',
-      url: 'https://www.redfin.com/x',
+      url: 'https://www.redfin.com/home/40732555',
     });
     installInner(t, inner);
 
     await t.fetch({ path: '/home/40732555', method: 'GET' });
-    expect(inner.fetch.mock.calls[0][0].url).toBe(
-      'https://www.redfin.com/home/40732555'
-    );
-    expect(inner.fetch.mock.calls[0][0].tabUrl).toBe('https://www.redfin.com/');
+    expect(inner.request).toHaveBeenCalledWith('GET', '/home/40732555', {
+      subdomain: 'www',
+      headers: undefined,
+      body: undefined,
+    });
   });
 
-  it('passes through absolute URLs', async () => {
+  it('passes through absolute URLs to inner.request unchanged', async () => {
     const t = new FetchproxyTransport({ version: '0.0.0' });
     const inner = stubInner();
-    inner.fetch.mockResolvedValue({
-      ok: true,
+    inner.request.mockResolvedValue({
       status: 200,
       body: '',
       url: 'https://photos.redfin.com/x',
     });
     installInner(t, inner);
 
-    await t.fetch({
-      path: 'https://photos.redfin.com/x',
-      method: 'GET',
-    });
-    expect(inner.fetch.mock.calls[0][0].url).toBe('https://photos.redfin.com/x');
+    await t.fetch({ path: 'https://photos.redfin.com/x', method: 'GET' });
+    expect(inner.request.mock.calls[0][1]).toBe('https://photos.redfin.com/x');
   });
 
-  it('returns the {status, body, url} triple on ok:true', async () => {
+  it('returns the {status, body, url} triple from a successful request', async () => {
     const t = new FetchproxyTransport({ version: '0.0.0' });
     const inner = stubInner();
-    inner.fetch.mockResolvedValue({
-      ok: true,
+    inner.request.mockResolvedValue({
       status: 200,
       body: 'hello',
       url: 'https://www.redfin.com/x',
@@ -80,17 +88,14 @@ describe('FetchproxyTransport', () => {
     });
   });
 
-  it('throws when fetchproxy returns ok:false', async () => {
+  it('lets typed errors from inner.request propagate to the caller', async () => {
     const t = new FetchproxyTransport({ version: '0.0.0' });
     const inner = stubInner();
-    inner.fetch.mockResolvedValue({
-      ok: false,
-      error: 'extension offline',
-    });
+    inner.request.mockRejectedValue(new Error('bridge boom'));
     installInner(t, inner);
 
     await expect(t.fetch({ path: '/x', method: 'GET' })).rejects.toThrow(
-      /extension offline/
+      /bridge boom/
     );
   });
 
@@ -106,81 +111,32 @@ describe('FetchproxyTransport', () => {
     expect(inner.close).toHaveBeenCalledTimes(1);
   });
 
-  it('LAZY REVIVE (#55): retries once on content_script_unreachable, succeeds on second attempt', async () => {
-    const t = new FetchproxyTransport({ version: '0.0.0' });
+  it('status() delegates directly to inner.bridgeHealth() (0.8.0+ collapsed the shim)', () => {
+    const t = new FetchproxyTransport({ version: '1.2.3' });
     const inner = stubInner();
-    let n = 0;
-    inner.fetch.mockImplementation(async () => {
-      n++;
-      if (n === 1) {
-        return {
-          ok: false,
-          kind: 'content_script_unreachable',
-          error: 'service worker evicted',
-        };
-      }
-      return {
-        ok: true,
-        status: 200,
-        body: 'recovered',
-        url: 'https://www.redfin.com/x',
-      };
+    inner.bridgeHealth.mockReturnValue({
+      role: 'host',
+      port: 37149,
+      serverVersion: '1.2.3',
+      fetchTimeoutMs: 30_000,
+      bridgeReviveDelayMs: 2_000,
+      lastSuccessAt: 1000,
+      lastFailureAt: 500,
+      lastFailureReason: 'oops',
+      consecutiveFailures: 0,
+      lastExtensionMessageAt: 1100,
     });
     installInner(t, inner);
 
-    const result = await t.fetch({ path: '/x', method: 'GET' });
-    expect(result.body).toBe('recovered');
-    expect(inner.fetch).toHaveBeenCalledTimes(2);
-  }, 10_000); // wraps the 2s lazy-revive sleep
-
-  it('LAZY REVIVE (#55): surfaces FetchproxyBridgeDownError when the retry also fails', async () => {
-    const t = new FetchproxyTransport({ version: '0.0.0' });
-    const inner = stubInner();
-    inner.fetch.mockResolvedValue({
-      ok: false,
-      kind: 'content_script_unreachable',
-      error: 'service worker still evicted',
-    });
-    installInner(t, inner);
-
-    await expect(t.fetch({ path: '/x', method: 'GET' })).rejects.toThrow(
-      /fetchproxy bridge down/
-    );
-    // First call + one retry.
-    expect(inner.fetch).toHaveBeenCalledTimes(2);
-    // Hint mentions the auto-retry and the manual recovery options.
-    await expect(t.fetch({ path: '/x', method: 'GET' })).rejects.toThrow(
-      /auto-retries once/
-    );
-  }, 30_000);
-
-  it('records exactly one failure when bridge-down retry also fails (no double-count)', async () => {
-    // One user-visible tool failure should bump consecutiveFailures by 1,
-    // not 2 — even though fetchOnce ran twice (initial + lazy-revive retry).
-    const t = new FetchproxyTransport({ version: '0.0.0' });
-    const inner = stubInner();
-    inner.fetch.mockResolvedValue({
-      ok: false,
-      kind: 'content_script_unreachable',
-      error: 'service worker still evicted',
-    });
-    installInner(t, inner);
-
-    await expect(t.fetch({ path: '/x', method: 'GET' })).rejects.toThrow(
-      /fetchproxy bridge down/
-    );
-    expect(inner.fetch).toHaveBeenCalledTimes(2);
-    expect(t.status().consecutiveFailures).toBe(1);
-  }, 10_000);
-
-  it('does NOT retry on non-bridge_down failures', async () => {
-    const t = new FetchproxyTransport({ version: '0.0.0' });
-    const inner = stubInner();
-    inner.fetch.mockResolvedValue({ ok: false, error: 'something else' });
-    installInner(t, inner);
-    await expect(t.fetch({ path: '/x', method: 'GET' })).rejects.toThrow(
-      /something else/
-    );
-    expect(inner.fetch).toHaveBeenCalledTimes(1);
+    const s = t.status();
+    expect(s.role).toBe('host');
+    expect(s.port).toBe(37149);
+    expect(s.serverVersion).toBe('1.2.3');
+    expect(s.fetchTimeoutMs).toBe(30_000);
+    expect(s.bridgeReviveDelayMs).toBe(2_000);
+    expect(s.lastSuccessAt).toBe(1000);
+    expect(s.lastFailureAt).toBe(500);
+    expect(s.lastFailureReason).toBe('oops');
+    expect(s.consecutiveFailures).toBe(0);
   });
 });

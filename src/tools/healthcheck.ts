@@ -3,6 +3,7 @@ import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import {
   FetchproxyBridgeDownError,
+  FetchproxyProtocolError,
   FetchproxyTimeoutError,
 } from '../transport-fetchproxy.js';
 
@@ -127,19 +128,23 @@ export function registerHealthcheckTools(
         ok = true;
       } catch (e) {
         const elapsedMs = Date.now() - start;
+        // 0.8.0+ typed errors no longer carry `role` — read it now from
+        // the bridge snapshot; role is stable across a single request.
+        const roleAtFailure = client.bridgeStatus().role;
         if (e instanceof FetchproxyTimeoutError) {
           error = {
             kind: 'timeout',
             message: e.message,
-            role_at_failure: e.role,
+            role_at_failure: roleAtFailure,
           };
         } else if (e instanceof FetchproxyBridgeDownError) {
           error = {
             kind: 'bridge_down',
             message: e.message,
-            role_at_failure: e.role,
+            role_at_failure: roleAtFailure,
           };
-        } else if (e instanceof Error && /fetchproxy transport error/.test(e.message)) {
+        } else if (e instanceof FetchproxyProtocolError) {
+          // Generic bridge protocol failure: no-tab, tab-fetch-failed, etc.
           error = { kind: 'transport', message: e.message };
         } else {
           error = {
@@ -149,9 +154,8 @@ export function registerHealthcheckTools(
         }
         probe = { ...probe, elapsed_ms: elapsedMs };
       }
-      // Re-read after the probe — recordSuccess/recordFailure on the
-      // transport just updated the counters, so this snapshot reflects
-      // the freshest state including this very call.
+      // Re-read after the probe — the server's bridgeHealth() counters
+      // just updated, so this snapshot reflects this very call.
       const postProbeBridge = client.bridgeStatus();
       const result: HealthcheckResult = {
         ok,
