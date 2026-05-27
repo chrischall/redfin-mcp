@@ -75,7 +75,7 @@ export function registerCompareTools(
     {
       title: 'Compare multiple Redfin properties side-by-side',
       description:
-        "Fetch and compare 2 or more Redfin properties side-by-side. Provide an array of targets, each either a `url` or a `property_id`+`listing_id` pair. Returns the full per-property record (price, beds/baths, sqft, year built, HOA monthly, last sold, derived price-drop, etc.). Pass `include_summary: true` for an aligned-by-field summary table (default false to save context — the per-row records carry the same data). Each record's `extracted_features` is always included. The raw marketing description is opt-in via `include_description: true`. Errors for individual properties are captured per-row. Calls are concurrent.",
+        "Fetch and compare 2 or more Redfin properties side-by-side. Provide an array of targets, each either a `url` or a `property_id`+`listing_id` pair. Returns the full per-property record (price, beds/baths, sqft, year built, HOA monthly, last sold, derived price-drop, etc.). Pass `include_summary: true` for an aligned-by-field `summary` table (default false to save context — the per-row records carry the same data, so emitting both duplicates ~30% of the response weight). Each record's `extracted_features` (lake_front, hot_tub, basement, furnished, dock, community) is always included. The raw marketing description is omitted by default — opt in with `include_description: true`. Errors for individual properties are captured per-row. Calls are concurrent.",
       annotations: {
         title: 'Compare multiple Redfin properties side-by-side',
         readOnlyHint: true,

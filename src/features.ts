@@ -104,8 +104,10 @@ const BASEMENT_UNFINISHED_RE =
   /\b(?:unfinished basement|basement[^.!?]{0,30}?\bunfinished)\b/i;
 const BASEMENT_FINISHED_RE =
   /\b(?:finished basement|basement[^.!?]{0,30}?\bfinished)\b/i;
+// `partial basement` is already covered by the first alternative when
+// both `(?:ly)?` and `(?:finished )?` don't match — keep the regex tight.
 const BASEMENT_PARTIAL_RE =
-  /\b(?:partial(?:ly)? (?:finished )?basement|partial basement|basement[^.!?]{0,30}?\bpartial(?:ly)?)\b/i;
+  /\b(?:partial(?:ly)? (?:finished )?basement|basement[^.!?]{0,30}?\bpartial(?:ly)?)\b/i;
 const BASEMENT_MENTIONED_RE = /\bbasement\b/i;
 
 const FURNISHED_FULLY_RE = /\b(?:fully furnished|sold furnished|turnkey)\b/i;
@@ -115,7 +117,11 @@ const FURNISHED_NEGOTIABLE_RE = /\bfurnishings (?:are )?negotiable\b/i;
 
 const DOCK_PRIVATE_RE = /\bprivate (?:boat )?dock\b/i;
 const DOCK_COMMUNITY_RE = /\b(?:community|shared) dock\b/i;
-const DOCK_MARINA_RE = /\bmarina\b/i;
+// Tighten "marina" — naked `\bmarina\b` false-positives on place names
+// like "123 Marina Dr", "Marina Bay", or "Marina del Rey". Use a negative
+// lookahead for the common place-suffixes so the dock signal stays clean.
+const DOCK_MARINA_RE =
+  /\bmarina\b(?!\s+(?:del|bay|dr|drive|blvd|boulevard|st|street|ave|avenue))/i;
 const DOCK_BOAT_SLIP_RE = /\bboat ?slip\b/i;
 
 /**
