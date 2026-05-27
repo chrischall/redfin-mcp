@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.0](https://github.com/chrischall/redfin-mcp/compare/v0.5.0...v0.6.0) (2026-05-27)
+
+
+### Features
+
+* **climate:** explicit availability shape + bulk + area baseline + landslide docs ([#51](https://github.com/chrischall/redfin-mcp/issues/51)-[#54](https://github.com/chrischall/redfin-mcp/issues/54)) ([#66](https://github.com/chrischall/redfin-mcp/issues/66)) ([7a7db8a](https://github.com/chrischall/redfin-mcp/commit/7a7db8a16a7a689fae14be120464e962a62c2cb5))
+* fetchproxy SW eviction auto-retry + description honesty sweep + raise compare cap ([#55](https://github.com/chrischall/redfin-mcp/issues/55)-[#57](https://github.com/chrischall/redfin-mcp/issues/57)) ([#67](https://github.com/chrischall/redfin-mcp/issues/67)) ([bb674dc](https://github.com/chrischall/redfin-mcp/commit/bb674dcf3c2632a6efb65fd7cb39c6aed6321a8a))
+* **history:** events_normalized + bundled history flags on get_property ([#65](https://github.com/chrischall/redfin-mcp/issues/65)) ([f0450b7](https://github.com/chrischall/redfin-mcp/commit/f0450b7de4297c725f8b4311f07a4192823f1f29))
+* **p0/p1:** add redfin_bulk_get + redfin_resolve_addresses ([#61](https://github.com/chrischall/redfin-mcp/issues/61)) ([ed74ca5](https://github.com/chrischall/redfin-mcp/commit/ed74ca5cbb5a41ff4da2a703afb6fcac15bf2e3c))
+* **p0:** default include_description=false + server-side extracted_features ([#58](https://github.com/chrischall/redfin-mcp/issues/58)) ([5b7c208](https://github.com/chrischall/redfin-mcp/commit/5b7c208e08bc6d56088d688a194bb413545d7447))
+* **p1:** schema derivations — hoa, price-drop, tax, summary opt-in, portal hyperlink, address alternates, last_sold ([#60](https://github.com/chrischall/redfin-mcp/issues/60)) ([6b166cd](https://github.com/chrischall/redfin-mcp/commit/6b166cd0b4643e43fb76f18ccc4e0ffcee15661a))
+* **p2:** add session registry + get_session_context + set_active_session ([#62](https://github.com/chrischall/redfin-mcp/issues/62)) ([bc4eacf](https://github.com/chrischall/redfin-mcp/commit/bc4eacf1a70a6f2f41e33b05ce0bd98639d93e5c))
+* **search:** coverage field + ZIP-state guard + cap audit ([#45](https://github.com/chrischall/redfin-mcp/issues/45) [#46](https://github.com/chrischall/redfin-mcp/issues/46) [#47](https://github.com/chrischall/redfin-mcp/issues/47)) ([#64](https://github.com/chrischall/redfin-mcp/issues/64)) ([4dcf31b](https://github.com/chrischall/redfin-mcp/commit/4dcf31bda631db70c6f96e626c6d6057dd197355))
+* **transport-fetchproxy,healthcheck:** adopt @fetchproxy/server 0.8.0 + surface bridge hints ([#70](https://github.com/chrischall/redfin-mcp/issues/70)) ([3252d21](https://github.com/chrischall/redfin-mcp/commit/3252d21ac6ab6c2e1eda781792acba9d0748fb5a))
+
+
+### Bug Fixes
+
+* **get-by-address:** retry with street-suffix abbreviation expansion ([#63](https://github.com/chrischall/redfin-mcp/issues/63)) ([191c55a](https://github.com/chrischall/redfin-mcp/commit/191c55a1ca620bf3895b2256d42e0e65ec4aade1))
+* **p0:** address PR [#58](https://github.com/chrischall/redfin-mcp/issues/58) review nits — tighten marina regex, simplify partial-basement, doc env var ([#68](https://github.com/chrischall/redfin-mcp/issues/68)) ([384c0ad](https://github.com/chrischall/redfin-mcp/commit/384c0add45a5acf311f34d348667fd8031dae4f2))
+
 ## [0.5.0](https://github.com/chrischall/redfin-mcp/compare/v0.4.5...v0.5.0) (2026-05-26)
 
 
