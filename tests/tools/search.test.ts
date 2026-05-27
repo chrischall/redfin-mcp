@@ -697,4 +697,54 @@ describe('redfin_search_properties tool', () => {
     expect(parsed.result_cap_hit).toBe(true);
     expect(parsed.notice).toMatch(/hard cap/);
   });
+
+  it('result_cap_hit: true even when some raw homes are null-filtered (missing propertyId)', async () => {
+    // Regression: formatted.length === raw.length used to gate the
+    // cap-hit signal. If formatHome drops any rows (e.g. one row
+    // missing propertyId), the cap-hit flag was silently lost.
+    // Cap-hit is a property of `raw`, not `formatted`.
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          sections: [
+            {
+              name: 'Places',
+              rows: [
+                {
+                  id: '6_30749',
+                  name: 'New York',
+                  subName: 'New York, NY, USA',
+                  url: '/city/30749/NY/New-York',
+                },
+              ],
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          homes: Array.from({ length: 1000 }, (_, i) => {
+            // First row lacks propertyId — formatHome will drop it,
+            // so formatted.length (999) < raw.length (1000).
+            if (i === 0) {
+              return { city: 'New York', state: 'NY', price: 100 } as RawHome;
+            }
+            return {
+              propertyId: i + 1,
+              city: 'New York',
+              state: 'NY',
+              price: 100,
+            } as RawHome;
+          }),
+        },
+      });
+    const r = await harness.callTool('redfin_search_properties', {
+      location: 'New York, NY',
+      limit: 2000,
+    });
+    const parsed = parseToolResult<{ result_cap_hit: boolean }>(r);
+    expect(parsed.result_cap_hit).toBe(true);
+  });
 });

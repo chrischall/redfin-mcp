@@ -213,7 +213,7 @@ export function registerClimateTools(
     {
       title: 'Get Redfin climate risk for a property',
       description:
-        "First Street Foundation climate risk scores for a property: flood factor (1–10, FEMA zones, 30-year annual chance series), fire factor (1–10, relative risk, insurance price band), heat factor (1–10, cumulative-risk projections at 0/5/10/15/20-year horizons). Sourced from Redfin's server-rendered homedetails HTML (no public stingray endpoint exists for this). Pass a homedetails URL (full or path). Returns an empty object when First Street data isn't available for the address.",
+        "First Street Foundation climate risk scores for a property. COVERS: flood (factor 1–10, FEMA zones, 30-year annual chance series), fire (factor 1–10, relative risk, insurance price band, provider count), heat (factor 1–10, cumulative-risk projections at 0/5/10/15/20-year horizons). DOES NOT COVER: landslide — this is the Helene-relevant risk vector in the NC mountains market and parts of CA / the Pacific Northwest. First Street has no landslide product. For that vector use the NC Geological Survey landslide hazard maps (NC) or USGS landslide hazard data (national). When data is missing, the response shape is currently an empty object — companion issue #51 tracks moving to `{ available: false, reason }` with reasons including new_construction, address_outside_coverage, and no_first_street_data. Sourced from Redfin's server-rendered homedetails HTML.",
       annotations: {
         title: 'Get Redfin climate risk for a property',
         readOnlyHint: true,

@@ -497,9 +497,15 @@ export function registerSearchTools(
       // server-side today — instead surface a `result_cap_hit` flag
       // and a hint so callers know when to narrow their query.
       const REDFIN_GIS_HARD_CAP = 350;
-      const resultCapHit =
-        raw.length >= REDFIN_GIS_HARD_CAP &&
-        formatted.length === raw.length; // i.e. limit didn't bite first
+      // Cap-hit is a property of the raw gis payload, NOT of the
+      // post-format / post-limit `formatted` slice. Two false-negative
+      // paths the old `formatted.length === raw.length` check missed:
+      // (a) formatHome drops rows lacking propertyId, so formatted can
+      // be shorter than raw even when no client-side limit applied;
+      // (b) when the caller passes a `limit` below the cap, `.slice`
+      // truncates formatted independently. Either way, if raw hit the
+      // cap, more listings exist server-side and we should signal it.
+      const resultCapHit = raw.length >= REDFIN_GIS_HARD_CAP;
 
       // #47 coverage. Map (gis returned homes) → 'full'; (gis empty
       // but Redfin clearly has individual profiles) → 'profile_only'
