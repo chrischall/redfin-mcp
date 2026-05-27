@@ -98,7 +98,7 @@ export function registerCompareTools(
           )
           .min(2)
           .max(25)
-          .describe('Array of 2–25 properties to compare. Use `redfin_bulk_get` for larger batches that don\'t need side-by-side analysis. (#57)'),
+          .describe('Array of 2–25 properties to compare. Use `redfin_bulk_get` for larger batches that don\'t need side-by-side analysis.'),
         include_description: z
           .boolean()
           .optional()

@@ -222,6 +222,13 @@ export class FetchproxyTransport implements RedfinTransport {
    * back online almost immediately on the next attempt. Lazy revive:
    * on `FetchproxyBridgeDownError`, sleep briefly and try once more.
    * Surfaces the second failure to the caller if it persists.
+   *
+   * Bridge-down `recordFailure` accounting lives here (not in
+   * `fetchOnce`) so that one user-visible tool error increments
+   * `consecutiveFailures` by exactly 1, even when the retry also
+   * fails. Other failure modes (timeout, non-bridge-down ok:false)
+   * still record once inside `fetchOnce` because they don't trigger
+   * the retry path.
    */
   async fetch(init: FetchInit): Promise<FetchResult> {
     try {
@@ -233,7 +240,14 @@ export class FetchproxyTransport implements RedfinTransport {
         // arrival. Empirically shorter delays sometimes still see the
         // SW as evicted.
         await new Promise((r) => setTimeout(r, 2000));
-        return await this.fetchOnce(init);
+        try {
+          return await this.fetchOnce(init);
+        } catch (retryErr) {
+          if (retryErr instanceof FetchproxyBridgeDownError) {
+            this.recordFailure(retryErr.originalError);
+          }
+          throw retryErr;
+        }
       }
       throw err;
     }
@@ -289,12 +303,15 @@ export class FetchproxyTransport implements RedfinTransport {
     const elapsed = Date.now() - start;
     if (!result.ok) {
       log('fetch:bridge-error', { url, elapsed, error: result.error });
-      this.recordFailure(result.error);
       // @fetchproxy/server 0.5.0+ classifies the extension-side error
       // into a discriminated `kind` (`'content_script_unreachable'`,
       // `'no_tab'`, `'tab_fetch_failed'`, …). We surface the SW-
       // unreachable case as a typed FetchproxyBridgeDownError so
       // callers + redfin_healthcheck can give actionable hints.
+      //
+      // NOTE: bridge-down does NOT recordFailure here — the lazy-revive
+      // retry in `fetch()` owns that accounting so a single user-visible
+      // failure increments `consecutiveFailures` by exactly 1.
       if (result.kind === 'content_script_unreachable') {
         throw new FetchproxyBridgeDownError({
           url,
@@ -304,6 +321,7 @@ export class FetchproxyTransport implements RedfinTransport {
           originalError: result.error,
         });
       }
+      this.recordFailure(result.error);
       throw new Error(
         `fetchproxy transport error after ${elapsed}ms (role=${this.inner.role ?? 'null'}): ${result.error}`
       );

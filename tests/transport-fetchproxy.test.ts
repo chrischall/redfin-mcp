@@ -154,6 +154,25 @@ describe('FetchproxyTransport', () => {
     );
   }, 30_000);
 
+  it('records exactly one failure when bridge-down retry also fails (no double-count)', async () => {
+    // One user-visible tool failure should bump consecutiveFailures by 1,
+    // not 2 — even though fetchOnce ran twice (initial + lazy-revive retry).
+    const t = new FetchproxyTransport({ version: '0.0.0' });
+    const inner = stubInner();
+    inner.fetch.mockResolvedValue({
+      ok: false,
+      kind: 'content_script_unreachable',
+      error: 'service worker still evicted',
+    });
+    installInner(t, inner);
+
+    await expect(t.fetch({ path: '/x', method: 'GET' })).rejects.toThrow(
+      /fetchproxy bridge down/
+    );
+    expect(inner.fetch).toHaveBeenCalledTimes(2);
+    expect(t.status().consecutiveFailures).toBe(1);
+  }, 10_000);
+
   it('does NOT retry on non-bridge_down failures', async () => {
     const t = new FetchproxyTransport({ version: '0.0.0' });
     const inner = stubInner();
