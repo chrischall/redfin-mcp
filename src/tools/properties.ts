@@ -3,6 +3,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import { urlToPath } from '../url.js';
+import {
+  extractFeatures,
+  loadCommunities,
+  type ExtractedFeatures,
+} from '../features.js';
 
 /**
  * Redfin property details are spread across two endpoints:
@@ -166,9 +171,23 @@ interface MediaBrowserInfo {
   }>;
 }
 
+/**
+ * Redfin surfaces the listing's public-remarks marketing prose as
+ * `mainHouseInfo.publicRemarksParagraph` inside the aboveTheFold
+ * payload — the field is typically 500–3000 chars of agent-authored
+ * copy. Verified live against /NC/Lake-Lure/268-Mallard-Rd-28746/...
+ * 2026-05-27. Callers usually want the keyword-extracted features (see
+ * `extracted_features`) rather than the raw text, so `description` is
+ * opt-in via `include_description: true`.
+ */
+interface MainHouseInfo {
+  publicRemarksParagraph?: string;
+}
+
 export interface AboveTheFoldPayload {
   addressSectionInfo?: AddressSectionInfo;
   mediaBrowserInfo?: MediaBrowserInfo;
+  mainHouseInfo?: MainHouseInfo;
 }
 
 function unwrap<T>(x: T | { value?: T } | undefined): T | undefined {
@@ -206,12 +225,26 @@ export interface FormattedProperty {
   fips?: string;
   apn?: string;
   primary_photo_url?: string;
+  /** Raw public-remarks marketing prose. Only emitted when caller
+   * passes `include_description: true` — see issue #32. */
+  description?: string;
+  /** Server-side keyword extraction from `description`. Always emitted
+   * when the listing has any prose; lifts work callers were doing
+   * client-side. See `src/features.ts` + issue #33. */
+  extracted_features?: ExtractedFeatures;
+}
+
+export interface FormatOptions {
+  /** Default false — see issue #32. Per-record marketing copy is
+   * 1.5–3 KB of context noise. */
+  includeDescription?: boolean;
 }
 
 export function format(
   initial: InitialInfoPayload | null,
   atf: AboveTheFoldPayload | null,
-  url: string
+  url: string,
+  opts: FormatOptions = {}
 ): FormattedProperty {
   const addr = atf?.addressSectionInfo ?? {};
   const street =
@@ -222,6 +255,11 @@ export function format(
   const photo = atf?.mediaBrowserInfo?.photos?.[0]?.photoUrls?.fullScreenPhotoUrl;
   const mls =
     typeof initial?.mlsId === 'object' ? initial.mlsId?.value : initial?.mlsId;
+  const remarks = atf?.mainHouseInfo?.publicRemarksParagraph;
+  const features =
+    typeof remarks === 'string' && remarks.length > 0
+      ? extractFeatures(remarks, loadCommunities())
+      : undefined;
   return {
     property_id: initial?.propertyId,
     listing_id: initial?.listingId,
@@ -253,6 +291,8 @@ export function format(
     fips: addr.fips,
     apn: addr.apn,
     primary_photo_url: photo,
+    ...(opts.includeDescription && remarks ? { description: remarks } : {}),
+    ...(features ? { extracted_features: features } : {}),
   };
 }
 
@@ -265,7 +305,7 @@ export function registerPropertyTools(
     {
       title: 'Get Redfin property details',
       description:
-        "Fetch a property's full Redfin record. Provide either (a) `url` — full Redfin homedetails URL or path, which we'll resolve via the initialInfo endpoint, or (b) `property_id` + `listing_id` — skip the resolution and go straight to aboveTheFold. Returns address, beds/baths, sqft, year built, price, status, days on market, and the primary photo URL. Read-only; safe to call repeatedly.",
+        "Fetch a property's full Redfin record. Provide either (a) `url` — full Redfin homedetails URL or path, which we'll resolve via the initialInfo endpoint, or (b) `property_id` + `listing_id` — skip the resolution and go straight to aboveTheFold. Returns address, beds/baths, sqft, year built, price, status, days on market, and the primary photo URL. The raw marketing description (`description`) is OMITTED by default to save context — pass `include_description: true` to get it. Server-side keyword extraction is always surfaced as `extracted_features` (lake_front, hot_tub, basement, furnished, dock, community). Read-only; safe to call repeatedly.",
       annotations: {
         title: 'Get Redfin property details',
         readOnlyHint: true,
@@ -295,9 +335,15 @@ export function registerPropertyTools(
           .describe(
             'Numeric Redfin listing ID. Required when property_id is provided.'
           ),
+        include_description: z
+          .boolean()
+          .optional()
+          .describe(
+            'Include the raw marketing/public-remarks description string in the response. Default false to save context — `extracted_features` always carries the structured signal callers actually need.'
+          ),
       },
     },
-    async ({ url, property_id, listing_id }) => {
+    async ({ url, property_id, listing_id, include_description }) => {
       // Route through resolveIds so URL-shape validation (Bug 4 fix)
       // and the InvalidPropertyUrlError path fire for this entry point
       // too — not just for compare/history/climate/rentals.
@@ -322,7 +368,11 @@ export function registerPropertyTools(
         url ? ids.canonicalUrl : (buildCanonicalUrl(atf?.addressSectionInfo, propertyId) ?? ids.canonicalUrl);
 
       if (!initial) initial = { propertyId, listingId };
-      return textResult(format(initial, atf, canonicalUrl));
+      return textResult(
+        format(initial, atf, canonicalUrl, {
+          includeDescription: include_description === true,
+        })
+      );
     }
   );
 }

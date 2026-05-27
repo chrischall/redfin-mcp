@@ -372,4 +372,68 @@ describe('redfin_get_property tool', () => {
     const text = (result.content[0] as { text: string }).text;
     expect(text).toMatch(/may have been delisted/);
   });
+
+  it('omits `description` by default and surfaces `extracted_features` when prose is present', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: { streetAddress: '268 Mallard Rd', city: 'Lake Lure', state: 'NC', zip: '28746' },
+        mainHouseInfo: {
+          publicRemarksParagraph:
+            'Stunning waterfront retreat with hot tub and unfinished basement. Located in Rumbling Bald.',
+        },
+      },
+    });
+    const result = await harness.callTool('redfin_get_property', {
+      property_id: 12345,
+      listing_id: 99,
+    });
+    const parsed = parseToolResult<{
+      description?: string;
+      extracted_features?: {
+        lake_front: boolean;
+        hot_tub: boolean;
+        basement: string | null;
+        community: string | null;
+      };
+    }>(result);
+    expect(parsed.description).toBeUndefined();
+    expect(parsed.extracted_features).toBeDefined();
+    expect(parsed.extracted_features?.lake_front).toBe(true);
+    expect(parsed.extracted_features?.hot_tub).toBe(true);
+    expect(parsed.extracted_features?.basement).toBe('unfinished');
+    expect(parsed.extracted_features?.community).toBe('Rumbling Bald');
+  });
+
+  it('emits `description` when include_description=true is set', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: { streetAddress: '268 Mallard Rd' },
+        mainHouseInfo: { publicRemarksParagraph: 'Beautiful home.' },
+      },
+    });
+    const result = await harness.callTool('redfin_get_property', {
+      property_id: 12345,
+      listing_id: 99,
+      include_description: true,
+    });
+    const parsed = parseToolResult<{ description?: string }>(result);
+    expect(parsed.description).toBe('Beautiful home.');
+  });
+
+  it('omits `extracted_features` when no prose is present', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: { streetAddress: '268 Mallard Rd' },
+      },
+    });
+    const result = await harness.callTool('redfin_get_property', {
+      property_id: 12345,
+      listing_id: 99,
+    });
+    const parsed = parseToolResult<{ extracted_features?: unknown }>(result);
+    expect(parsed.extracted_features).toBeUndefined();
+  });
 });
