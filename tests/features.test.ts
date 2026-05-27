@@ -135,6 +135,16 @@ describe('extractFeatures', () => {
     it('returns null when no dock mention', () => {
       expect(extractFeatures('No water access.', communities).dock).toBeNull();
     });
+    it('does NOT misclassify place-name "Marina" suffixes as a dock (false-positive pin)', () => {
+      expect(
+        extractFeatures('Property at 123 Marina Dr with sweeping views.', communities).dock
+      ).toBeNull();
+      expect(extractFeatures('Just south of Marina Bay.', communities).dock).toBeNull();
+      expect(extractFeatures('Marina del Rey area.', communities).dock).toBeNull();
+    });
+    it('still matches "marina" as a dock signal when not followed by a place-suffix', () => {
+      expect(extractFeatures('Marina slip included.', communities).dock).toBe('marina');
+    });
   });
 
   describe('community', () => {
