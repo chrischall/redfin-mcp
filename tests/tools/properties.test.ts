@@ -16,7 +16,12 @@ const mockClient = {
 } as unknown as RedfinClient;
 
 let harness: Awaited<ReturnType<typeof createTestHarness>>;
-beforeEach(() => vi.clearAllMocks());
+// Default to a rejecting promise so unconfigured calls (e.g. BTF in tests
+// that only care about ATF) behave like production — caught and treated as null.
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockFetchStingrayJson.mockRejectedValue(new Error('no mock configured'));
+});
 afterAll(async () => {
   if (harness) await harness.close();
 });
@@ -535,6 +540,81 @@ describe('redfin_get_property tool', () => {
     }>(result);
     expect(parsed.tax_annual).toBeNull();
     expect(parsed.tax_status).toBe('not_yet_assessed');
+  });
+
+  it('bundles price_history + events_normalized when include_price_history=true (#49)', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: { addressSectionInfo: { streetAddress: 'x' } },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          propertyHistoryInfo: {
+            events: [
+              {
+                eventDescription: 'Listed',
+                eventDate: Date.parse('2024-01-01'),
+                price: 500_000,
+              },
+              {
+                eventDescription: 'Sold (MLS)',
+                eventDate: Date.parse('2024-02-01'),
+                price: 480_000,
+              },
+            ],
+          },
+        },
+      });
+    const r = await harness.callTool('redfin_get_property', {
+      property_id: 12345,
+      listing_id: 99,
+      include_price_history: true,
+    });
+    const parsed = parseToolResult<{
+      price_history?: Array<{ event: string }>;
+      events_normalized?: Array<{ type: string }>;
+      tax_history?: unknown;
+    }>(r);
+    expect(parsed.price_history).toHaveLength(2);
+    expect(parsed.events_normalized).toHaveLength(2);
+    // Newest-first to tandem-index with `price_history`.
+    expect(parsed.events_normalized?.[0].type).toBe('Sold');
+    expect(parsed.events_normalized?.[1].type).toBe('Listed');
+    // Tax history NOT requested → omitted.
+    expect(parsed.tax_history).toBeUndefined();
+  });
+
+  it('bundles tax_history when include_tax_history=true (#49)', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: { addressSectionInfo: { streetAddress: 'x' } },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          publicRecordsInfo: {
+            allTaxInfo: [
+              { rollYear: 2024, taxesDue: 5400 },
+              { rollYear: 2023, taxesDue: 5200 },
+            ],
+          },
+        },
+      });
+    const r = await harness.callTool('redfin_get_property', {
+      property_id: 12345,
+      listing_id: 99,
+      include_tax_history: true,
+    });
+    const parsed = parseToolResult<{
+      tax_history?: Array<{ year: number; taxes_paid: number }>;
+      price_history?: unknown;
+    }>(r);
+    expect(parsed.tax_history).toHaveLength(2);
+    expect(parsed.tax_history?.[0].year).toBe(2024);
+    expect(parsed.price_history).toBeUndefined();
   });
 
   it('emits address_alternates when MLS-feed addresses differ from primary (#42)', async () => {

@@ -16,6 +16,14 @@ import {
   lastSold,
   priceDrop,
 } from '../derived.js';
+import {
+  formatPriceEvent,
+  formatTaxEvent,
+  normalizeEvents,
+  type FormattedPriceEvent,
+  type FormattedTaxEvent,
+  type NormalizedEvent,
+} from './history.js';
 
 /**
  * Redfin property details are spread across two endpoints:
@@ -394,7 +402,7 @@ export function registerPropertyTools(
     {
       title: 'Get Redfin property details',
       description:
-        "Fetch a property's full Redfin record. Provide either (a) `url` — full Redfin homedetails URL or path, which we'll resolve via the initialInfo endpoint, or (b) `property_id` + `listing_id` — skip the resolution and go straight to aboveTheFold. Returns address, beds/baths, sqft, year built, price, status, days on market, and the primary photo URL. The raw marketing description (`description`) is OMITTED by default to save context — pass `include_description: true` to get it. Server-side keyword extraction is always surfaced as `extracted_features` (lake_front, hot_tub, basement, furnished, dock, community). Read-only; safe to call repeatedly.",
+        "Fetch a property's full Redfin record. Provide either (a) `url` — full Redfin homedetails URL or path, which we'll resolve via the initialInfo endpoint, or (b) `property_id` + `listing_id` — skip the resolution and go straight to aboveTheFold. Returns address, beds/baths, sqft, year built, price, status, days on market, the primary photo URL, plus derived fields (price_drop_*, hoa_monthly_usd, last_sold_*, tax_annual, extracted_features). The raw marketing description is OMITTED by default — opt in with `include_description: true`. Set `include_price_history: true` to bundle the full price history (and the cross-MCP-normalized `events_normalized` view) inline; set `include_tax_history: true` for `tax_history`. Read-only; safe to call repeatedly.",
       annotations: {
         title: 'Get Redfin property details',
         readOnlyHint: true,
@@ -430,9 +438,21 @@ export function registerPropertyTools(
           .describe(
             'Include the raw marketing/public-remarks description string in the response. Default false to save context — `extracted_features` always carries the structured signal callers actually need.'
           ),
+        include_price_history: z
+          .boolean()
+          .optional()
+          .describe(
+            'Bundle the full price history inline as `price_history` + `events_normalized`. Default false. Saves a follow-up redfin_get_price_history round trip — use this when a workflow needs both. (#49)'
+          ),
+        include_tax_history: z
+          .boolean()
+          .optional()
+          .describe(
+            'Bundle the full tax history inline as `tax_history`. Default false. (#49)'
+          ),
       },
     },
-    async ({ url, property_id, listing_id, include_description }) => {
+    async ({ url, property_id, listing_id, include_description, include_price_history, include_tax_history }) => {
       // Route through resolveIds so URL-shape validation (Bug 4 fix)
       // and the InvalidPropertyUrlError path fire for this entry point
       // too — not just for compare/history/climate/rentals.
@@ -452,14 +472,27 @@ export function registerPropertyTools(
         client.fetchStingrayJson<AboveTheFoldPayload>(
           `/stingray/api/home/details/aboveTheFold?${atfParams.toString()}`
         ),
-        Promise.resolve(
-          client.fetchStingrayJson<{
-            propertyHistoryInfo?: {
-              events?: Array<{ eventDescription?: string; eventDate?: number; price?: number }>;
-            };
-            publicRecordsInfo?: { taxInfo?: { taxesDue?: number } };
-          }>(`/stingray/api/home/details/belowTheFold?${atfParams.toString()}`)
-        )
+        client.fetchStingrayJson<{
+          propertyHistoryInfo?: {
+            events?: Array<{
+              eventDescription?: string;
+              eventDate?: number;
+              price?: number;
+              daysOnMarket?: number;
+              source?: string;
+              sourceId?: string;
+            }>;
+          };
+          publicRecordsInfo?: {
+            taxInfo?: { taxesDue?: number };
+            allTaxInfo?: Array<{
+              rollYear?: number;
+              taxesDue?: number;
+              taxableLandValue?: number;
+              taxableImprovementValue?: number;
+            }>;
+          };
+        }>(`/stingray/api/home/details/belowTheFold?${atfParams.toString()}`)
           .then((e) => (e ? e.payload ?? null : null))
           .catch(() => null),
       ]);
@@ -472,13 +505,33 @@ export function registerPropertyTools(
         url ? ids.canonicalUrl : (buildCanonicalUrl(atf?.addressSectionInfo, propertyId) ?? ids.canonicalUrl);
 
       if (!initial) initial = { propertyId, listingId };
-      return textResult(
-        format(initial, atf, canonicalUrl, {
-          includeDescription: include_description === true,
-          events: btf?.propertyHistoryInfo?.events,
-          taxAnnual: btf?.publicRecordsInfo?.taxInfo?.taxesDue,
-        })
-      );
+      const formatted = format(initial, atf, canonicalUrl, {
+        includeDescription: include_description === true,
+        events: btf?.propertyHistoryInfo?.events,
+        taxAnnual: btf?.publicRecordsInfo?.taxInfo?.taxesDue,
+      });
+
+      // #49 bundling. BTF is already fetched above for the cheap
+      // derived fields — when the caller opts in, surface the full
+      // histories inline so they don't have to make a follow-up call.
+      let price_history: FormattedPriceEvent[] | undefined;
+      let events_normalized: NormalizedEvent[] | undefined;
+      let tax_history: FormattedTaxEvent[] | undefined;
+      if (include_price_history === true && btf?.propertyHistoryInfo?.events) {
+        price_history = btf.propertyHistoryInfo.events.map(formatPriceEvent);
+        // Reverse to newest-first so it tandem-indexes with `price_history`.
+        events_normalized = normalizeEvents(btf.propertyHistoryInfo.events).reverse();
+      }
+      if (include_tax_history === true && btf?.publicRecordsInfo?.allTaxInfo) {
+        tax_history = btf.publicRecordsInfo.allTaxInfo.map(formatTaxEvent);
+      }
+
+      return textResult({
+        ...formatted,
+        ...(price_history ? { price_history } : {}),
+        ...(events_normalized ? { events_normalized } : {}),
+        ...(tax_history ? { tax_history } : {}),
+      });
     }
   );
 }

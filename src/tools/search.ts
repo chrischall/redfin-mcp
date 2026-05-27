@@ -4,6 +4,7 @@ import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import { resolveBoth, type RedfinAddress } from '../autocomplete.js';
 import { buildPortalUrlHyperlink, priceDrop } from '../derived.js';
+import { extractZipFromLocation, homesMatchZipState } from '../geo.js';
 
 /**
  * Redfin's search API: `GET /stingray/api/gis?...&region_id=X&region_type=Y`
@@ -221,7 +222,7 @@ function discriminatingTokens(s: string | undefined): Set<string> {
 
 /**
  * Throw if the gis call's response doesn't actually describe the
- * requested region. Two failure modes both surface here:
+ * requested region. Three failure modes surface here:
  *
  *   1. `serviceRegionName` is set but unrelated (e.g. you asked for
  *      "Brooklyn" type-6, gis returned "arbor-heights"). This is the
@@ -231,6 +232,13 @@ function discriminatingTokens(s: string | undefined): Set<string> {
  *      Asheville, NC type-2 returns gis homes in Ipswich, MA). Newer
  *      gis behavior — same underlying fallback, just no diagnostic
  *      field. Verified live 2026-05-24 against Asheville (2_555).
+ *   3. The location was a ZIP and the returned homes' states are
+ *      inconsistent with the ZIP's first-digit prefix (e.g. ZIP 28746
+ *      → North Carolina; got Washington homes). Catches the canonical
+ *      cross-continent fallback (#46). The ZIP check fires BEFORE
+ *      path 2 because state-level mismatches are the most dangerous
+ *      class — silently mixing in other-state listings corrupts
+ *      downstream analysis.
  *
  * Zero results are accepted as legitimate (small markets with no
  * Redfin MLS coverage will get an empty result with a notice from the
@@ -241,8 +249,35 @@ export function assertRegionMatches(
   payload: {
     serviceRegionName?: string;
     homes?: Array<{ city?: string; state?: string }>;
-  }
+  },
+  inputLocation?: string
 ): void {
+  // Path 3 (run FIRST): ZIP → expected states sanity check. Fires only
+  // when the caller's location string contains a recognizable US ZIP
+  // and the result set has any homes to check. Stops cross-continent
+  // fallbacks (canonical case: ZIP 28746 returning Seattle results) (#46).
+  const zip = extractZipFromLocation(inputLocation);
+  if (zip) {
+    const homes = payload.homes ?? [];
+    const zipCheck = homesMatchZipState(
+      zip,
+      homes.map((h) => h.state)
+    );
+    if (zipCheck.matched === false && zipCheck.plausibleStates) {
+      const plausible = Array.from(zipCheck.plausibleStates).sort().join(', ');
+      const firstState = homes[0]?.state ?? '?';
+      const firstCity = homes[0]?.city ?? 'an unknown city';
+      throw new Error(
+        `redfin_search_properties: ZIP ${zip} not in Redfin's coverage — ` +
+          `the gis API returned ${homes.length} result(s) in ${firstCity}, ${firstState}, ` +
+          `but ZIP ${zip} belongs to ${plausible}. ` +
+          `This is Redfin's cross-continent silent fallback — try the city name instead ` +
+          `(e.g. "Lake Lure, NC" rather than "${zip}"), or use \`redfin_get_by_address\` ` +
+          `for per-property lookup.`
+      );
+    }
+  }
+
   const wanted = new Set([
     ...discriminatingTokens(region.name),
     ...discriminatingTokens(region.sub_name),
@@ -365,7 +400,7 @@ export function registerSearchTools(
     {
       title: 'Search Redfin listings',
       description:
-        "Search Redfin listings by location (city, ZIP, neighborhood, or full street address) and optional filters. Resolves the location via Redfin's autocomplete then queries the gis API; full street addresses short-circuit to the single matched home (no gis call). KNOWN FAILURE MODES: (1) Rural ZIPs may fall into Redfin's cross-continent silent-fallback — ZIP 28746 (Lake Lure, NC) has been seen returning Seattle Fremont results; companion issue #46 catches state-level mismatches and errors loudly. Use the city/state form (`Lake Lure, NC`) when a ZIP search misbehaves. (2) Some markets have no gis coverage but DO have per-address profile pages — companion issue #47 adds a `coverage` field (`full` | `profile_only` | `none`); when `profile_only`, fall through to `redfin_get_by_address`. (3) Redfin's gis API likely caps results — companion issue #45 audits this; for high-density metros, narrow with price/beds filters. Returns matching properties with price, beds/baths, sqft, year built, address, and the Redfin home URL — `resolved_as` is `'region'` or `'address'`. v0.1.0 supports `for_sale` status only — for-rent and recently-sold live on separate Redfin URL paths. Read-only; safe to call repeatedly.",
+        "Search Redfin listings by location (city, ZIP, neighborhood, or full street address) and optional filters. Resolves the location via Redfin's autocomplete then queries the gis API; full street addresses short-circuit to the single matched home (no gis call). Returns matching properties with price, beds/baths, sqft, year built, address, and the Redfin home URL. `resolved_as` is `'region'` / `'address'`. `coverage` is `'full'` (gis indexed this region), `'profile_only'` (Redfin has profiles for individual addresses here but search isn't indexed — use redfin_get_by_address per property), or `'none'`. `result_cap_hit: true` signals the gis API returned its ~350 hard cap and more listings exist — narrow with price/beds filters. ZIP queries that fall into Redfin's cross-continent fallback (e.g. ZIP 28746 returning Seattle results) now error loudly. v0.1.0 supports `for_sale` status only. Read-only; safe to call repeatedly.",
       annotations: {
         title: 'Search Redfin listings',
         readOnlyHint: true,
@@ -416,7 +451,15 @@ export function registerSearchTools(
       const { region, address } = await resolveBoth(client, input.location);
       if (!region) {
         if (address) {
-          return textResult(addressOnlyResult(address));
+          // coverage: "profile_only" — Redfin has the address-level
+          // profile page but no gis/MLS coverage for the surrounding
+          // region. Surfaced explicitly so callers know to keep using
+          // per-address resolution rather than retrying with a broader
+          // search. (#47)
+          return textResult({
+            ...addressOnlyResult(address),
+            coverage: 'profile_only' as const,
+          });
         }
         throw new Error(
           `redfin_search_properties: could not resolve location "${input.location}" to a Redfin region or address. ` +
@@ -431,28 +474,66 @@ export function registerSearchTools(
       const raw = env.payload?.homes ?? [];
       // Detect Redfin's silent-fallback failure modes: gis ignores the
       // region and returns either (a) results for a different
-      // serviceRegionName, or (b) results whose city/state share no
-      // discriminating tokens with the requested region. assertRegionMatches
-      // covers both; zero results pass the check intentionally.
-      assertRegionMatches(region, {
-        serviceRegionName: env.payload?.serviceRegionName,
-        homes: raw.map((h) => ({ city: h.city, state: h.state })),
-      });
+      // serviceRegionName, (b) results whose city/state share no
+      // discriminating tokens with the requested region, or (c) ZIP →
+      // wrong-state results (the cross-continent fallback). #46.
+      assertRegionMatches(
+        region,
+        {
+          serviceRegionName: env.payload?.serviceRegionName,
+          homes: raw.map((h) => ({ city: h.city, state: h.state })),
+        },
+        input.location
+      );
       const limit = input.limit ?? 40;
       const formatted = raw
         .map(formatHome)
         .filter((h): h is FormattedHome => h !== null)
         .slice(0, limit);
+
+      // #45 silent-cap audit. Redfin's gis API returns at most
+      // ~350 homes per call (verified live across high-density metros;
+      // Redfin's web UI paginates beyond that). We don't paginate
+      // server-side today — instead surface a `result_cap_hit` flag
+      // and a hint so callers know when to narrow their query.
+      const REDFIN_GIS_HARD_CAP = 350;
+      // Cap-hit is a property of the raw gis payload, NOT of the
+      // post-format / post-limit `formatted` slice. Two false-negative
+      // paths the old `formatted.length === raw.length` check missed:
+      // (a) formatHome drops rows lacking propertyId, so formatted can
+      // be shorter than raw even when no client-side limit applied;
+      // (b) when the caller passes a `limit` below the cap, `.slice`
+      // truncates formatted independently. Either way, if raw hit the
+      // cap, more listings exist server-side and we should signal it.
+      const resultCapHit = raw.length >= REDFIN_GIS_HARD_CAP;
+
+      // #47 coverage. Map (gis returned homes) → 'full'; (gis empty
+      // but Redfin clearly has individual profiles) → 'profile_only'
+      // when an address match also resolved on the same query;
+      // otherwise 'none'.
+      // We can detect address-availability cheaply by checking whether
+      // resolveBoth also returned an `address` value. Today's
+      // implementation runs that lookup once at the top of this
+      // handler.
+      const coverage: 'full' | 'profile_only' | 'none' =
+        formatted.length > 0
+          ? 'full'
+          : address
+            ? 'profile_only'
+            : 'none';
+
       // Surface a helpful notice when gis legitimately has no listings
-      // for a resolved-but-tiny market (e.g. Lake Lure, NC). The
-      // assertRegionMatches check passes on empty results to avoid false
-      // alarms, so we annotate the response here.
+      // for a resolved-but-tiny market (e.g. Lake Lure, NC).
       const notice =
         formatted.length === 0
           ? `Redfin's gis API returned 0 results for region ${region.region_type}_${region.region_id} ("${region.name}"). ` +
-            "This often means the location is outside Redfin's MLS coverage rather than that there are genuinely no listings. " +
-            'Try a nearby larger city, the county, or compare against redfin.com directly.'
-          : undefined;
+            `coverage: ${coverage}. ` +
+            (coverage === 'profile_only'
+              ? "Redfin has per-property profile pages here but does not index this market in search — use `redfin_get_by_address` for individual properties."
+              : "This often means the location is outside Redfin's MLS coverage rather than that there are genuinely no listings. Try a nearby larger city, the county, or compare against redfin.com directly.")
+          : resultCapHit
+            ? `Redfin's gis API returned the hard cap (~${REDFIN_GIS_HARD_CAP}) of results — more listings likely exist for this region. Narrow with price/beds filters, or query a smaller sub-region, to enumerate the long tail.`
+            : undefined;
       return textResult({
         resolved_as: 'region' as const,
         region: {
@@ -461,6 +542,8 @@ export function registerSearchTools(
           region_id: region.region_id,
           region_type: region.region_type,
         },
+        coverage,
+        result_cap_hit: resultCapHit,
         ...(notice ? { notice } : {}),
         results: formatted,
       });
