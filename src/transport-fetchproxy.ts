@@ -27,6 +27,8 @@ import {
   FetchproxyBridgeDownError,
   FetchproxyTimeoutError,
   FetchproxyProtocolError,
+  classifyBridgeError,
+  type BridgeError,
 } from '@fetchproxy/server';
 import type {
   BridgeStatus,
@@ -41,7 +43,9 @@ export {
   FetchproxyBridgeDownError,
   FetchproxyTimeoutError,
   FetchproxyProtocolError,
+  classifyBridgeError,
 };
+export type { BridgeError };
 
 const DEFAULT_PORT = 37_149;
 // Server default; mirrored here so `status().fetchTimeoutMs` stays accurate.

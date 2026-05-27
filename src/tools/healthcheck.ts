@@ -3,8 +3,8 @@ import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import {
   FetchproxyBridgeDownError,
-  FetchproxyProtocolError,
   FetchproxyTimeoutError,
+  classifyBridgeError,
 } from '../transport-fetchproxy.js';
 
 /**
@@ -51,8 +51,18 @@ interface HealthcheckResult {
   error?: {
     kind: 'timeout' | 'transport' | 'bridge_down' | 'other';
     message: string;
-    /** When the timeout fired, the role at the moment of failure. */
+    /** Role the bridge was in at throw time. Read directly off the typed
+     *  error (0.8.0+); previously snapshotted post-throw via
+     *  `bridgeStatus()`, which was racy on quick reconnects. */
     role_at_failure?: 'host' | 'peer' | null;
+    /** 0.8.0+: actual elapsed ms when a `FetchproxyTimeoutError` fired.
+     *  Lets users distinguish a hair-trigger timeout from a real hang. */
+    elapsed_ms_at_timeout?: number;
+    /** 0.8.0+: pre-built actionable recovery string from
+     *  `FetchproxyBridgeDownError.hint` (e.g. "click the extension icon
+     *  to wake the service worker"). Surfaced so the LLM can show the
+     *  user the upstream recommendation verbatim. */
+    bridge_hint?: string;
   };
   /** Plain-English next-step suggestion derived from the result. */
   hint: string;
@@ -128,29 +138,47 @@ export function registerHealthcheckTools(
         ok = true;
       } catch (e) {
         const elapsedMs = Date.now() - start;
-        // 0.8.0+ typed errors no longer carry `role` — read it now from
-        // the bridge snapshot; role is stable across a single request.
-        const roleAtFailure = client.bridgeStatus().role;
-        if (e instanceof FetchproxyTimeoutError) {
-          error = {
-            kind: 'timeout',
-            message: e.message,
-            role_at_failure: roleAtFailure,
-          };
-        } else if (e instanceof FetchproxyBridgeDownError) {
-          error = {
-            kind: 'bridge_down',
-            message: e.message,
-            role_at_failure: roleAtFailure,
-          };
-        } else if (e instanceof FetchproxyProtocolError) {
-          // Generic bridge protocol failure: no-tab, tab-fetch-failed, etc.
-          error = { kind: 'transport', message: e.message };
-        } else {
-          error = {
-            kind: 'other',
-            message: e instanceof Error ? e.message : String(e),
-          };
+        // 0.8.0+: discriminate with the server's own helper rather than
+        // an instanceof ladder. The helper enforces "subclass before
+        // parent" once, so we can't accidentally collapse Timeout /
+        // BridgeDown onto the generic Protocol arm by reordering.
+        // role / port / elapsedMs / hint are now carried on the typed
+        // errors directly — no post-throw `bridgeStatus()` snapshot.
+        const kind = classifyBridgeError(e);
+        const message = e instanceof Error ? e.message : String(e);
+        switch (kind) {
+          case 'timeout': {
+            const te = e as FetchproxyTimeoutError;
+            error = {
+              kind: 'timeout',
+              message,
+              role_at_failure: te.role,
+              elapsed_ms_at_timeout: te.elapsedMs,
+            };
+            break;
+          }
+          case 'bridge_down': {
+            const bd = e as FetchproxyBridgeDownError;
+            error = {
+              kind: 'bridge_down',
+              message,
+              role_at_failure: bd.role,
+              bridge_hint: bd.hint,
+            };
+            break;
+          }
+          case 'http':
+          case 'protocol':
+            // redfin-mcp doesn't pass `expectStatus`, so FetchproxyHttpError
+            // shouldn't fire in practice; bucket it with generic protocol
+            // failures (no-tab, tab-fetch-failed, etc.) so the user still
+            // gets the "open redfin.com, sign in, and retry" hint.
+            error = { kind: 'transport', message };
+            break;
+          case 'other':
+          default:
+            error = { kind: 'other', message };
+            break;
         }
         probe = { ...probe, elapsed_ms: elapsedMs };
       }

@@ -73,6 +73,9 @@ describe('redfin_healthcheck tool', () => {
         new FetchproxyTimeoutError({
           url: 'https://www.redfin.com/robots.txt',
           timeoutMs: 25,
+          role: 'peer',
+          port: 37200,
+          elapsedMs: 27,
         })
       ),
     });
@@ -84,12 +87,23 @@ describe('redfin_healthcheck tool', () => {
     const parsed = parseToolResult<{
       ok: boolean;
       bridge: { role: string };
-      error: { kind: string; role_at_failure: string };
+      error: {
+        kind: string;
+        role_at_failure: string;
+        elapsed_ms_at_timeout: number;
+      };
       hint: string;
     }>(r);
     expect(parsed.ok).toBe(false);
     expect(parsed.error.kind).toBe('timeout');
+    // 0.8.0+: role_at_failure is read straight off the typed error, not
+    // from a post-throw bridgeStatus() snapshot. (Same value here, but
+    // the source matters: errors carry the role at throw time.)
     expect(parsed.error.role_at_failure).toBe('peer');
+    // 0.8.0+: timeouts surface the actual elapsed ms so users can tell
+    // a hair-trigger timeout (timeout=25ms, elapsed≈26ms) from a real
+    // hang (timeout=30000ms, elapsed≈30001ms).
+    expect(parsed.error.elapsed_ms_at_timeout).toBe(27);
     expect(parsed.hint).toMatch(/extension popup/i);
   });
 
@@ -174,6 +188,8 @@ describe('redfin_healthcheck tool', () => {
           originalError:
             'tab fetch failed: Error: Could not establish connection. Receiving end does not exist.',
           retryAttempted: true,
+          role: 'peer',
+          port: 37149,
         })
       ),
     });
@@ -183,11 +199,22 @@ describe('redfin_healthcheck tool', () => {
     const r = await harness.callTool('redfin_healthcheck', {});
     const parsed = parseToolResult<{
       ok: boolean;
-      error: { kind: string; message: string };
+      error: {
+        kind: string;
+        message: string;
+        role_at_failure: string | null;
+        bridge_hint: string;
+      };
       hint: string;
     }>(r);
     expect(parsed.ok).toBe(false);
     expect(parsed.error.kind).toBe('bridge_down');
+    // 0.8.0+: role read directly off the typed error (carried at throw time).
+    expect(parsed.error.role_at_failure).toBe('peer');
+    // 0.8.0+: the server pre-builds an actionable recovery string on
+    // FetchproxyBridgeDownError. Surface it so the LLM can show the
+    // user exactly what to do.
+    expect(parsed.error.bridge_hint).toMatch(/.+/);
     expect(parsed.hint).toMatch(/service worker/i);
   });
 
