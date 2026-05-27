@@ -204,6 +204,34 @@ describe('redfin_compare_properties tool', () => {
     expect(parsed.results[0].property?.extracted_features?.dock).toBe('private');
   });
 
+  it('accepts up to 25 targets (#57 raised cap from 8 → 25)', async () => {
+    mockFetchStingrayJson.mockResolvedValue({
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: { streetAddress: 'x', city: 'X', state: 'NY', zip: '11111' },
+      },
+    });
+    const r = await harness.callTool('redfin_compare_properties', {
+      targets: Array.from({ length: 25 }, (_, i) => ({
+        property_id: i + 1,
+        listing_id: 10,
+      })),
+    });
+    expect(r.isError).toBeFalsy();
+    const parsed = parseToolResult<{ count: number }>(r);
+    expect(parsed.count).toBe(25);
+  });
+
+  it('rejects 26 targets (cap is 25)', async () => {
+    const r = await harness.callTool('redfin_compare_properties', {
+      targets: Array.from({ length: 26 }, (_, i) => ({
+        property_id: i + 1,
+        listing_id: 10,
+      })),
+    });
+    expect(r.isError).toBeTruthy();
+  });
+
   it('omits the `summary` field by default (#37) — opt in with include_summary=true', async () => {
     mockFetchStingrayJson.mockResolvedValue({
       resultCode: 0,
