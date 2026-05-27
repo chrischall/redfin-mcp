@@ -8,6 +8,14 @@ import {
   loadCommunities,
   type ExtractedFeatures,
 } from '../features.js';
+import {
+  buildPortalUrlHyperlink,
+  cleanTaxAnnual,
+  collectAddressAlternates,
+  hoaToMonthlyUsd,
+  lastSold,
+  priceDrop,
+} from '../derived.js';
 
 /**
  * Redfin property details are spread across two endpoints:
@@ -140,6 +148,7 @@ export interface AddressSectionInfo {
   pricePerSqFt?: { value?: number } | number;
   priceInfo?: { amount?: number; label?: string };
   latestPriceInfo?: { amount?: number; label?: string };
+  previousPriceInfo?: { amount?: number; label?: string };
   status?: { displayValue?: string };
   cumulativeDaysOnMarket?: number;
   daysOnMarketLabel?: string;
@@ -179,9 +188,25 @@ interface MediaBrowserInfo {
  * 2026-05-27. Callers usually want the keyword-extracted features (see
  * `extracted_features`) rather than the raw text, so `description` is
  * opt-in via `include_description: true`.
+ *
+ * Other mainHouseInfo bits we lift derived fields off:
+ *   - `hoaDues.{amount, frequency}`: feeds `hoa_monthly_usd` (#34).
+ *   - `unparsedAddress` / `secondaryAddress`: candidates for
+ *     `address_alternates` (#42).
  */
+interface HoaDues {
+  amount?: number;
+  frequency?: string;
+}
+
 interface MainHouseInfo {
   publicRemarksParagraph?: string;
+  hoaDues?: HoaDues;
+  /** MLS-feed-supplied flat address. May disagree with the primary
+   * built address (see #42). */
+  unparsedAddress?: string;
+  /** Some Redfin records carry a secondary MLS address (#42). */
+  secondaryAddress?: string;
 }
 
 export interface AboveTheFoldPayload {
@@ -204,8 +229,16 @@ export interface FormattedProperty {
   market_id?: number;
   mls_id?: string;
   url: string;
+  /** Sheets-paste-ready hyperlink formula pointing at the same listing.
+   * Always present (mirrors `url`). Pasting it into Google Sheets
+   * renders as a clickable "Redfin" link. See issue #41. */
+  portal_url_hyperlink: string;
   market_name?: string;
   address?: string;
+  /** Alternate addresses from other MLS feeds, prior listings, or
+   * parcel variants. Excludes the primary (kept in `address`). Omitted
+   * when empty/absent. See issue #42. */
+  address_alternates?: string[];
   city?: string;
   state?: string;
   zip?: string;
@@ -216,10 +249,34 @@ export interface FormattedProperty {
   year_built?: number;
   price?: number;
   price_label?: string;
+  /** Previous list price when Redfin exposes one — feeds price-drop
+   * derived fields. */
+  previous_list_price?: number;
+  /** `previous_list_price - price`. `null` when either is missing. (#35) */
+  price_drop_amount?: number | null;
+  /** `(previous - current) / previous * 100`, rounded to 0.1. (#35) */
+  price_drop_percent?: number | null;
   status?: string;
   cumulative_days_on_market?: number;
   days_on_market_label?: string;
   sold_date_unix_ms?: number;
+  /** ISO date of the most recent Sold event (from price-history). (#50)
+   * Surfaced inline; no extra fetch needed because the caller often has
+   * the history loaded already (or, when only ATF is fetched, this
+   * stays `null`). */
+  last_sold_date?: string | null;
+  /** Sale price of the most recent Sold event. (#50) */
+  last_sold_price?: number | null;
+  /** Monthly-normalized HOA cost derived from hoaDues.{amount, frequency}.
+   * `null` when the frequency is unknown or no fee is reported. (#34) */
+  hoa_monthly_usd?: number | null;
+  /** `null` when the upstream raw value is the 0/1 not-yet-assessed
+   * placeholder. See `tax_status` for the discriminator. (#36) */
+  tax_annual?: number | null;
+  /** `"not_yet_assessed"` when `tax_annual` was the 0/1 placeholder,
+   * else `null`. Future-proofed for `"estimated"` / `"actual"` once
+   * upstream surfaces a marker. (#36) */
+  tax_status?: 'not_yet_assessed' | null;
   latitude?: number;
   longitude?: number;
   fips?: string;
@@ -238,6 +295,14 @@ export interface FormatOptions {
   /** Default false — see issue #32. Per-record marketing copy is
    * 1.5–3 KB of context noise. */
   includeDescription?: boolean;
+  /** Optional price-history events; when present, the formatter
+   * derives `last_sold_date` + `last_sold_price` (#50) from them.
+   * Pass the raw `propertyHistoryInfo.events` from belowTheFold. */
+  events?: Array<{ eventDescription?: string; eventDate?: number; price?: number }>;
+  /** Optional current-year tax dollars (from `publicRecordsInfo.taxInfo.taxesDue`).
+   * When supplied, the formatter null-cleans the 0/1 sentinel and emits
+   * `tax_status: "not_yet_assessed"` for that case (#36). */
+  taxAnnual?: number | null;
 }
 
 export function format(
@@ -252,14 +317,30 @@ export function format(
       ? addr.streetAddress?.assembledAddress
       : addr.streetAddress;
   const price = addr.latestPriceInfo?.amount ?? addr.priceInfo?.amount;
+  const previousPrice = addr.previousPriceInfo?.amount;
   const photo = atf?.mediaBrowserInfo?.photos?.[0]?.photoUrls?.fullScreenPhotoUrl;
   const mls =
     typeof initial?.mlsId === 'object' ? initial.mlsId?.value : initial?.mlsId;
-  const remarks = atf?.mainHouseInfo?.publicRemarksParagraph;
+  const mainHouse = atf?.mainHouseInfo;
+  const remarks = mainHouse?.publicRemarksParagraph;
   const features =
     typeof remarks === 'string' && remarks.length > 0
       ? extractFeatures(remarks, loadCommunities())
       : undefined;
+  const address =
+    [street, addr.city, addr.state, addr.zip].filter(Boolean).join(', ') ||
+    undefined;
+  const alternates = collectAddressAlternates(address, [
+    mainHouse?.unparsedAddress,
+    mainHouse?.secondaryAddress,
+  ]);
+  const drop = priceDrop(price, previousPrice);
+  const hoa = hoaToMonthlyUsd(mainHouse?.hoaDues?.amount, mainHouse?.hoaDues?.frequency);
+  const sold = opts.events ? lastSold(opts.events) : { last_sold_date: null, last_sold_price: null };
+  const taxCleaned =
+    opts.taxAnnual !== undefined
+      ? cleanTaxAnnual(opts.taxAnnual)
+      : { tax_annual: null as number | null, tax_status: null as 'not_yet_assessed' | null };
   return {
     property_id: initial?.propertyId,
     listing_id: initial?.listingId,
@@ -267,9 +348,9 @@ export function format(
     mls_id: mls,
     market_name: initial?.marketName,
     url,
-    address:
-      [street, addr.city, addr.state, addr.zip].filter(Boolean).join(', ') ||
-      undefined,
+    portal_url_hyperlink: buildPortalUrlHyperlink(url),
+    address,
+    ...(alternates.length > 0 ? { address_alternates: alternates } : {}),
     city: addr.city,
     state: addr.state,
     zip: addr.zip,
@@ -280,10 +361,18 @@ export function format(
     year_built: unwrap(addr.yearBuilt),
     price,
     price_label: addr.latestPriceInfo?.label ?? addr.priceInfo?.label,
+    ...(typeof previousPrice === 'number' ? { previous_list_price: previousPrice } : {}),
+    price_drop_amount: drop.price_drop_amount,
+    price_drop_percent: drop.price_drop_percent,
     status: addr.status?.displayValue,
     cumulative_days_on_market: addr.cumulativeDaysOnMarket,
     days_on_market_label: addr.daysOnMarketLabel,
     sold_date_unix_ms: addr.soldDate,
+    last_sold_date: sold.last_sold_date,
+    last_sold_price: sold.last_sold_price,
+    hoa_monthly_usd: hoa,
+    tax_annual: taxCleaned.tax_annual,
+    tax_status: taxCleaned.tax_status,
     latitude:
       addr.latLong?.value?.latitude ?? initial?.latLong?.value?.latitude,
     longitude:
@@ -356,9 +445,24 @@ export function registerPropertyTools(
         accessLevel: '1',
         listingId: String(listingId),
       });
-      const atfEnv = await client.fetchStingrayJson<AboveTheFoldPayload>(
-        `/stingray/api/home/details/aboveTheFold?${atfParams.toString()}`
-      );
+      // Fetch ATF + BTF in parallel so we can surface the cheap derived
+      // fields (#50 last_sold_*, #36 tax_annual placeholder cleanup)
+      // without forcing the caller to make a second tool call.
+      const [atfEnv, btf] = await Promise.all([
+        client.fetchStingrayJson<AboveTheFoldPayload>(
+          `/stingray/api/home/details/aboveTheFold?${atfParams.toString()}`
+        ),
+        Promise.resolve(
+          client.fetchStingrayJson<{
+            propertyHistoryInfo?: {
+              events?: Array<{ eventDescription?: string; eventDate?: number; price?: number }>;
+            };
+            publicRecordsInfo?: { taxInfo?: { taxesDue?: number } };
+          }>(`/stingray/api/home/details/belowTheFold?${atfParams.toString()}`)
+        )
+          .then((e) => (e ? e.payload ?? null : null))
+          .catch(() => null),
+      ]);
       const atf = atfEnv.payload ?? null;
 
       // resolveIds emits the short /home/<id> form when the caller passed
@@ -371,6 +475,8 @@ export function registerPropertyTools(
       return textResult(
         format(initial, atf, canonicalUrl, {
           includeDescription: include_description === true,
+          events: btf?.propertyHistoryInfo?.events,
+          taxAnnual: btf?.publicRecordsInfo?.taxInfo?.taxesDue,
         })
       );
     }

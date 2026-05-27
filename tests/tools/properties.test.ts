@@ -301,7 +301,8 @@ describe('redfin_get_property tool', () => {
       listing_id: 999,
     });
     expect(result.isError).toBeFalsy();
-    expect(mockFetchStingrayJson).toHaveBeenCalledTimes(1);
+    // Now hits both ATF and BTF in parallel — was 1 call, now 2.
+    expect(mockFetchStingrayJson).toHaveBeenCalledTimes(2);
     expect(mockFetchStingrayJson.mock.calls[0][0]).toMatch(
       /aboveTheFold\?propertyId=99/
     );
@@ -435,5 +436,129 @@ describe('redfin_get_property tool', () => {
     });
     const parsed = parseToolResult<{ extracted_features?: unknown }>(result);
     expect(parsed.extracted_features).toBeUndefined();
+  });
+
+  it('emits `portal_url_hyperlink`, `hoa_monthly_usd` and `price_drop_*` derived fields', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: {
+          streetAddress: { assembledAddress: '268 Mallard Rd' },
+          city: 'Lake Lure',
+          state: 'NC',
+          zip: '28746',
+          latestPriceInfo: { amount: 480_000 },
+          previousPriceInfo: { amount: 500_000 },
+        },
+        mainHouseInfo: {
+          hoaDues: { amount: 4967, frequency: 'Annually' },
+        },
+      },
+    });
+    const result = await harness.callTool('redfin_get_property', {
+      property_id: 12345,
+      listing_id: 99,
+    });
+    const parsed = parseToolResult<{
+      portal_url_hyperlink: string;
+      previous_list_price: number;
+      price_drop_amount: number;
+      price_drop_percent: number;
+      hoa_monthly_usd: number;
+    }>(result);
+    expect(parsed.portal_url_hyperlink).toBe(
+      '=HYPERLINK("https://www.redfin.com/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345","Redfin")'
+    );
+    expect(parsed.previous_list_price).toBe(500_000);
+    expect(parsed.price_drop_amount).toBe(20_000);
+    expect(parsed.price_drop_percent).toBe(4.0);
+    expect(parsed.hoa_monthly_usd).toBe(414); // 4967/12 rounded
+  });
+
+  it('surfaces last_sold_* from belowTheFold price history (#50)', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        // ATF
+        resultCode: 0,
+        payload: { addressSectionInfo: { streetAddress: 'x' } },
+      })
+      .mockResolvedValueOnce({
+        // BTF
+        resultCode: 0,
+        payload: {
+          propertyHistoryInfo: {
+            events: [
+              {
+                eventDescription: 'Sold (Public Records)',
+                eventDate: 1_700_000_000_000,
+                price: 550_000,
+              },
+              { eventDescription: 'Listed', eventDate: 1_600_000_000_000 },
+            ],
+          },
+          publicRecordsInfo: { taxInfo: { taxesDue: 5400 } },
+        },
+      });
+    const result = await harness.callTool('redfin_get_property', {
+      property_id: 12345,
+      listing_id: 99,
+    });
+    const parsed = parseToolResult<{
+      last_sold_date: string;
+      last_sold_price: number;
+      tax_annual: number;
+      tax_status: string | null;
+    }>(result);
+    expect(parsed.last_sold_price).toBe(550_000);
+    expect(parsed.last_sold_date).toBe('2023-11-14');
+    expect(parsed.tax_annual).toBe(5400);
+    expect(parsed.tax_status).toBeNull();
+  });
+
+  it('nulls out tax_annual when raw is 0/1 placeholder (#36)', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: { addressSectionInfo: { streetAddress: 'x' } },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: { publicRecordsInfo: { taxInfo: { taxesDue: 1 } } },
+      });
+    const result = await harness.callTool('redfin_get_property', {
+      property_id: 12345,
+      listing_id: 99,
+    });
+    const parsed = parseToolResult<{
+      tax_annual: number | null;
+      tax_status: string | null;
+    }>(result);
+    expect(parsed.tax_annual).toBeNull();
+    expect(parsed.tax_status).toBe('not_yet_assessed');
+  });
+
+  it('emits address_alternates when MLS-feed addresses differ from primary (#42)', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: {
+          streetAddress: '109 Overlook Point Ln',
+          city: 'X',
+          state: 'NC',
+          zip: '28746',
+        },
+        mainHouseInfo: {
+          unparsedAddress: '169 Overlook Point Ln, X, NC 28746',
+        },
+      },
+    });
+    const result = await harness.callTool('redfin_get_property', {
+      property_id: 12345,
+      listing_id: 99,
+    });
+    const parsed = parseToolResult<{ address_alternates?: string[] }>(result);
+    expect(parsed.address_alternates).toEqual([
+      '169 Overlook Point Ln, X, NC 28746',
+    ]);
   });
 });

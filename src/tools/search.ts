@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import { resolveBoth, type RedfinAddress } from '../autocomplete.js';
+import { buildPortalUrlHyperlink, priceDrop } from '../derived.js';
 
 /**
  * Redfin's search API: `GET /stingray/api/gis?...&region_id=X&region_type=Y`
@@ -61,6 +62,11 @@ export interface RawHome {
   state?: string;
   zip?: string;
   price?: number | { value?: number };
+  /** Redfin's gis API surfaces the prior list price as `previousPrice`
+   * (or `originalPrice` on some payload variants). Either is good for
+   * the price-drop derived fields (#35). */
+  previousPrice?: number | { value?: number };
+  originalPrice?: number | { value?: number };
   beds?: number;
   baths?: number;
   sqFt?: number | { value?: number };
@@ -82,6 +88,8 @@ export interface FormattedHome {
   mls_id?: string;
   status?: string;
   url: string;
+  /** Sheets-paste-ready `=HYPERLINK(url,"Redfin")`. Always present. (#41) */
+  portal_url_hyperlink: string;
   address: string;
   street?: string;
   unit?: string;
@@ -89,6 +97,11 @@ export interface FormattedHome {
   state?: string;
   zip?: string;
   price?: number;
+  previous_list_price?: number;
+  /** `previous_list_price - price`. `null` when either is missing. (#35) */
+  price_drop_amount?: number | null;
+  /** `(previous - current) / previous * 100`, rounded to 0.1. (#35) */
+  price_drop_percent?: number | null;
   price_per_sqft?: number;
   beds?: number;
   baths?: number;
@@ -128,19 +141,28 @@ export function formatHome(raw: RawHome): FormattedHome | null {
   ]
     .filter(Boolean)
     .join(', ');
+  const currentPrice = v(raw.price);
+  const previousListPrice = v(raw.previousPrice) ?? v(raw.originalPrice);
+  const drop = priceDrop(currentPrice, previousListPrice);
   return {
     property_id: raw.propertyId,
     listing_id: raw.listingId,
     mls_id: v(raw.mlsId as { value?: string }),
     status: raw.mlsStatus,
     url: fullUrl,
+    portal_url_hyperlink: buildPortalUrlHyperlink(fullUrl),
     address,
     street,
     unit,
     city: raw.city,
     state: raw.state,
     zip: raw.zip,
-    price: v(raw.price),
+    price: currentPrice,
+    ...(typeof previousListPrice === 'number'
+      ? { previous_list_price: previousListPrice }
+      : {}),
+    price_drop_amount: drop.price_drop_amount,
+    price_drop_percent: drop.price_drop_percent,
     price_per_sqft: v(raw.pricePerSqFt),
     beds: raw.beds,
     baths: raw.baths,
@@ -309,9 +331,11 @@ export function addressOnlyResult(address: RedfinAddress): {
   notice: string;
   results: FormattedHome[];
 } {
+  const fullUrl = address.url;
   const result: FormattedHome = {
     property_id: parseInt(address.home_id, 10),
-    url: address.url,
+    url: fullUrl,
+    portal_url_hyperlink: buildPortalUrlHyperlink(fullUrl),
     address: [address.street_address, address.city, address.state, address.zip]
       .filter(Boolean)
       .join(', '),
@@ -319,6 +343,8 @@ export function addressOnlyResult(address: RedfinAddress): {
     city: address.city,
     state: address.state,
     zip: address.zip,
+    price_drop_amount: null,
+    price_drop_percent: null,
   };
   return {
     region: null,
