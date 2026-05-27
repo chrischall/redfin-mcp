@@ -35,6 +35,32 @@ describe('buildSummary', () => {
     const beds = summary.find((r) => r.field === 'beds')!;
     expect(beds.values).toEqual([2, null, 4]);
   });
+
+  it('includes derived fields (hoa_monthly_usd, price_drop_*, last_sold_*, tax_annual)', () => {
+    const rows = [
+      {
+        property_id: 1,
+        url: 'u',
+        property: {
+          property_id: 1,
+          url: 'u',
+          hoa_monthly_usd: 250,
+          price_drop_amount: 20_000,
+          price_drop_percent: 4.0,
+          last_sold_price: 400_000,
+          last_sold_date: '2024-01-15',
+          tax_annual: 5400,
+        },
+      },
+    ];
+    const summary = buildSummary(rows as never);
+    expect(summary.find((r) => r.field === 'hoa_monthly_usd')?.values).toEqual([250]);
+    expect(summary.find((r) => r.field === 'price_drop_amount')?.values).toEqual([20_000]);
+    expect(summary.find((r) => r.field === 'price_drop_percent')?.values).toEqual([4.0]);
+    expect(summary.find((r) => r.field === 'last_sold_price')?.values).toEqual([400_000]);
+    expect(summary.find((r) => r.field === 'last_sold_date')?.values).toEqual(['2024-01-15']);
+    expect(summary.find((r) => r.field === 'tax_annual')?.values).toEqual([5400]);
+  });
 });
 
 describe('redfin_compare_properties tool', () => {
@@ -114,10 +140,13 @@ describe('redfin_compare_properties tool', () => {
   });
 
   it('captures per-target errors without failing the whole call', async () => {
-    let n = 0;
-    mockFetchStingrayJson.mockImplementation(async () => {
-      n++;
-      if (n === 2) throw new Error('boom');
+    // compare now fetches ATF + BTF per target in parallel. Fail the
+    // ATF for target 2 (path contains `aboveTheFold` and propertyId=2),
+    // let the rest succeed.
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.includes('aboveTheFold') && path.includes('propertyId=2')) {
+        throw new Error('boom');
+      }
       return {
         resultCode: 0,
         payload: {
@@ -173,6 +202,43 @@ describe('redfin_compare_properties tool', () => {
     expect(parsed.results[0].property?.description).toBeUndefined();
     expect(parsed.results[0].property?.extracted_features?.lake_front).toBe(true);
     expect(parsed.results[0].property?.extracted_features?.dock).toBe('private');
+  });
+
+  it('omits the `summary` field by default (#37) — opt in with include_summary=true', async () => {
+    mockFetchStingrayJson.mockResolvedValue({
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: {
+          streetAddress: 'x', city: 'X', state: 'NY', zip: '11111',
+          latestPriceInfo: { amount: 500 },
+        },
+      },
+    });
+    const rNoSummary = await harness.callTool('redfin_compare_properties', {
+      targets: [
+        { property_id: 1, listing_id: 10 },
+        { property_id: 2, listing_id: 20 },
+      ],
+    });
+    const parsedNo = parseToolResult<{ summary?: unknown; results: unknown[] }>(
+      rNoSummary
+    );
+    expect(parsedNo.summary).toBeUndefined();
+    expect(parsedNo.results).toHaveLength(2);
+
+    const rWithSummary = await harness.callTool('redfin_compare_properties', {
+      targets: [
+        { property_id: 1, listing_id: 10 },
+        { property_id: 2, listing_id: 20 },
+      ],
+      include_summary: true,
+    });
+    const parsedYes = parseToolResult<{
+      summary?: Array<{ field: string; values: unknown[] }>;
+    }>(rWithSummary);
+    expect(parsedYes.summary).toBeDefined();
+    // Aligned-by-field with 2 rows.
+    expect(parsedYes.summary?.find((r) => r.field === 'price')?.values).toEqual([500, 500]);
   });
 
   it('emits description on every row when include_description=true', async () => {

@@ -32,20 +32,29 @@ interface ComparePerProperty {
 export function buildSummary(rows: ComparePerProperty[]): CompareSummaryRow[] {
   const pick = (
     label: string,
-    fn: (p: FormattedProperty) => number | string | undefined
+    fn: (p: FormattedProperty) => number | string | null | undefined
   ): CompareSummaryRow => ({
     field: label,
     values: rows.map((r) => (r.property ? fn(r.property) ?? null : null)),
   });
+  // Summary fields match the per-row property shape exactly — same
+  // primitive type, same null semantics. No JSON-stringified compound
+  // values; that was the onehome bug class #37 tracks.
   return [
     pick('price', (p) => p.price),
     pick('price_per_sqft', (p) => p.price_per_sqft),
+    pick('price_drop_amount', (p) => p.price_drop_amount),
+    pick('price_drop_percent', (p) => p.price_drop_percent),
     pick('beds', (p) => p.beds),
     pick('baths', (p) => p.baths),
     pick('sqft', (p) => p.sqft),
     pick('year_built', (p) => p.year_built),
     pick('status', (p) => p.status),
     pick('cumulative_days_on_market', (p) => p.cumulative_days_on_market),
+    pick('hoa_monthly_usd', (p) => p.hoa_monthly_usd),
+    pick('tax_annual', (p) => p.tax_annual),
+    pick('last_sold_price', (p) => p.last_sold_price),
+    pick('last_sold_date', (p) => p.last_sold_date),
     pick('city', (p) => p.city),
     pick('zip', (p) => p.zip),
   ];
@@ -66,7 +75,7 @@ export function registerCompareTools(
     {
       title: 'Compare multiple Redfin properties side-by-side',
       description:
-        "Fetch and compare 2 or more Redfin properties side-by-side. Provide an array of targets, each either a `url` or a `property_id`+`listing_id` pair. Returns a compact summary table aligned by field (price, beds/baths, sqft, year built, etc.) plus the full per-property record. Each record's `extracted_features` (lake_front, hot_tub, basement, furnished, dock, community) is always included. The raw marketing description is omitted by default — opt in with `include_description: true`. Errors for individual properties are captured per-row. Calls are concurrent.",
+        "Fetch and compare 2 or more Redfin properties side-by-side. Provide an array of targets, each either a `url` or a `property_id`+`listing_id` pair. Returns the full per-property record (price, beds/baths, sqft, year built, HOA monthly, last sold, derived price-drop, etc.). Pass `include_summary: true` for an aligned-by-field summary table (default false to save context — the per-row records carry the same data). Each record's `extracted_features` is always included. The raw marketing description is opt-in via `include_description: true`. Errors for individual properties are captured per-row. Calls are concurrent.",
       annotations: {
         title: 'Compare multiple Redfin properties side-by-side',
         readOnlyHint: true,
@@ -96,9 +105,15 @@ export function registerCompareTools(
           .describe(
             'Include each property\'s raw marketing/public-remarks description. Default false to save context — `extracted_features` always carries the structured signal.'
           ),
+        include_summary: z
+          .boolean()
+          .optional()
+          .describe(
+            'Include the aligned-by-field `summary` table. Default false — the per-row records carry the same data, so emitting both duplicates ~30% of the response weight. (#37)'
+          ),
       },
     },
-    async ({ targets, include_description }) => {
+    async ({ targets, include_description, include_summary }) => {
       const results = await Promise.all(
         (targets as CompareTarget[]).map(
           async (t): Promise<ComparePerProperty> => {
@@ -109,10 +124,31 @@ export function registerCompareTools(
                 accessLevel: '1',
                 listingId: String(ids.listingId),
               });
-              const env = await client.fetchStingrayJson<AboveTheFoldPayload>(
-                `/stingray/api/home/details/aboveTheFold?${params.toString()}`
-              );
-              const atf = env.payload ?? null;
+              // ATF + BTF in parallel: same pattern as redfin_get_property
+              // so the derived fields (last_sold_*, tax_annual cleanup)
+              // are available without a follow-up fetch.
+              const [atfEnv, btf] = await Promise.all([
+                client.fetchStingrayJson<AboveTheFoldPayload>(
+                  `/stingray/api/home/details/aboveTheFold?${params.toString()}`
+                ),
+                Promise.resolve(
+                  client.fetchStingrayJson<{
+                    propertyHistoryInfo?: {
+                      events?: Array<{
+                        eventDescription?: string;
+                        eventDate?: number;
+                        price?: number;
+                      }>;
+                    };
+                    publicRecordsInfo?: { taxInfo?: { taxesDue?: number } };
+                  }>(
+                    `/stingray/api/home/details/belowTheFold?${params.toString()}`
+                  )
+                )
+                  .then((e) => (e ? e.payload ?? null : null))
+                  .catch(() => null),
+              ]);
+              const atf = atfEnv.payload ?? null;
               const initial = ids.initial ?? {
                 propertyId: ids.propertyId,
                 listingId: ids.listingId,
@@ -125,6 +161,8 @@ export function registerCompareTools(
                 url: canonicalUrl,
                 property: format(initial, atf, canonicalUrl, {
                   includeDescription: include_description === true,
+                  events: btf?.propertyHistoryInfo?.events,
+                  taxAnnual: btf?.publicRecordsInfo?.taxInfo?.taxesDue,
                 }),
               };
             } catch (e) {
@@ -139,7 +177,7 @@ export function registerCompareTools(
       );
       return textResult({
         count: results.length,
-        summary: buildSummary(results),
+        ...(include_summary === true ? { summary: buildSummary(results) } : {}),
         results,
       });
     }

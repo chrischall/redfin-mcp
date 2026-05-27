@@ -66,6 +66,44 @@ describe('formatHome', () => {
     expect(f?.url).toBe('https://www.redfin.com/home/42');
   });
 
+  it('emits portal_url_hyperlink (#41)', () => {
+    const f = formatHome({
+      propertyId: 40732555,
+      url: '/NY/Brooklyn/42-Monroe-St-11238/home/40732555',
+    });
+    expect(f?.portal_url_hyperlink).toBe(
+      '=HYPERLINK("https://www.redfin.com/NY/Brooklyn/42-Monroe-St-11238/home/40732555","Redfin")'
+    );
+  });
+
+  it('derives price_drop_amount + price_drop_percent (#35)', () => {
+    const f = formatHome({
+      propertyId: 1,
+      price: 480_000,
+      previousPrice: 500_000,
+    });
+    expect(f?.price_drop_amount).toBe(20_000);
+    expect(f?.price_drop_percent).toBe(4.0);
+    expect(f?.previous_list_price).toBe(500_000);
+  });
+
+  it('leaves price_drop_* null when no previous price', () => {
+    const f = formatHome({ propertyId: 1, price: 480_000 });
+    expect(f?.price_drop_amount).toBeNull();
+    expect(f?.price_drop_percent).toBeNull();
+    expect(f?.previous_list_price).toBeUndefined();
+  });
+
+  it('falls back to originalPrice when previousPrice is absent', () => {
+    const f = formatHome({
+      propertyId: 1,
+      price: 480_000,
+      originalPrice: 500_000,
+    });
+    expect(f?.previous_list_price).toBe(500_000);
+    expect(f?.price_drop_amount).toBe(20_000);
+  });
+
   it('handles raw streetLine as a plain string (not value-wrapper)', () => {
     const f = formatHome({
       propertyId: 1,
