@@ -266,9 +266,9 @@ export function registerHistoryTools(
       });
       const rawEvents = payload?.propertyHistoryInfo?.events ?? [];
       const priceEvents = rawEvents.map(formatPriceEvent);
-      // Normalized view — same enum across sibling MCPs (#48). The
-      // raw price_events stay for back-compat.
-      const eventsNormalized = normalizeEvents(rawEvents);
+      // Normalized view — same enum across sibling MCPs (#48). Reversed
+      // to newest-first so it tandem-indexes with `price_events`.
+      const eventsNormalized = normalizeEvents(rawEvents).reverse();
       const taxEvents = (payload?.publicRecordsInfo?.allTaxInfo ?? []).map(
         formatTaxEvent
       );

@@ -472,29 +472,27 @@ export function registerPropertyTools(
         client.fetchStingrayJson<AboveTheFoldPayload>(
           `/stingray/api/home/details/aboveTheFold?${atfParams.toString()}`
         ),
-        Promise.resolve(
-          client.fetchStingrayJson<{
-            propertyHistoryInfo?: {
-              events?: Array<{
-                eventDescription?: string;
-                eventDate?: number;
-                price?: number;
-                daysOnMarket?: number;
-                source?: string;
-                sourceId?: string;
-              }>;
-            };
-            publicRecordsInfo?: {
-              taxInfo?: { taxesDue?: number };
-              allTaxInfo?: Array<{
-                rollYear?: number;
-                taxesDue?: number;
-                taxableLandValue?: number;
-                taxableImprovementValue?: number;
-              }>;
-            };
-          }>(`/stingray/api/home/details/belowTheFold?${atfParams.toString()}`)
-        )
+        client.fetchStingrayJson<{
+          propertyHistoryInfo?: {
+            events?: Array<{
+              eventDescription?: string;
+              eventDate?: number;
+              price?: number;
+              daysOnMarket?: number;
+              source?: string;
+              sourceId?: string;
+            }>;
+          };
+          publicRecordsInfo?: {
+            taxInfo?: { taxesDue?: number };
+            allTaxInfo?: Array<{
+              rollYear?: number;
+              taxesDue?: number;
+              taxableLandValue?: number;
+              taxableImprovementValue?: number;
+            }>;
+          };
+        }>(`/stingray/api/home/details/belowTheFold?${atfParams.toString()}`)
           .then((e) => (e ? e.payload ?? null : null))
           .catch(() => null),
       ]);
@@ -521,7 +519,8 @@ export function registerPropertyTools(
       let tax_history: FormattedTaxEvent[] | undefined;
       if (include_price_history === true && btf?.propertyHistoryInfo?.events) {
         price_history = btf.propertyHistoryInfo.events.map(formatPriceEvent);
-        events_normalized = normalizeEvents(btf.propertyHistoryInfo.events);
+        // Reverse to newest-first so it tandem-indexes with `price_history`.
+        events_normalized = normalizeEvents(btf.propertyHistoryInfo.events).reverse();
       }
       if (include_tax_history === true && btf?.publicRecordsInfo?.allTaxInfo) {
         tax_history = btf.publicRecordsInfo.allTaxInfo.map(formatTaxEvent);

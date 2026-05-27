@@ -16,7 +16,12 @@ const mockClient = {
 } as unknown as RedfinClient;
 
 let harness: Awaited<ReturnType<typeof createTestHarness>>;
-beforeEach(() => vi.clearAllMocks());
+// Default to a rejecting promise so unconfigured calls (e.g. BTF in tests
+// that only care about ATF) behave like production — caught and treated as null.
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockFetchStingrayJson.mockRejectedValue(new Error('no mock configured'));
+});
 afterAll(async () => {
   if (harness) await harness.close();
 });
@@ -574,7 +579,9 @@ describe('redfin_get_property tool', () => {
     }>(r);
     expect(parsed.price_history).toHaveLength(2);
     expect(parsed.events_normalized).toHaveLength(2);
-    expect(parsed.events_normalized?.[1].type).toBe('Sold');
+    // Newest-first to tandem-index with `price_history`.
+    expect(parsed.events_normalized?.[0].type).toBe('Sold');
+    expect(parsed.events_normalized?.[1].type).toBe('Listed');
     // Tax history NOT requested → omitted.
     expect(parsed.tax_history).toBeUndefined();
   });

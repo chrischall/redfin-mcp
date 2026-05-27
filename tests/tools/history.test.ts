@@ -269,10 +269,11 @@ describe('redfin_get_price_history tool', () => {
         price_change_pct?: number;
       }>;
     }>(r);
+    // Newest-first to tandem-index with `price_events`.
     expect(parsed.events_normalized).toHaveLength(3);
-    expect(parsed.events_normalized[0].type).toBe('Listed');
+    expect(parsed.events_normalized[0].type).toBe('Sold');
     expect(parsed.events_normalized[1].type).toBe('PriceChange');
-    expect(parsed.events_normalized[2].type).toBe('Sold');
+    expect(parsed.events_normalized[2].type).toBe('Listed');
     // (480k - 500k) / 500k * 100 = -4.0
     expect(parsed.events_normalized[1].price_change_pct).toBe(-4.0);
   });
