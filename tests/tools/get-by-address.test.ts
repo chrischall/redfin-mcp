@@ -113,8 +113,12 @@ describe('redfin_get_by_address tool', () => {
     );
   });
 
-  it('degrades to resolved=false when no Addresses match', async () => {
-    mockFetchStingrayJson.mockResolvedValueOnce({
+  it('degrades to resolved=false when no Addresses match (all variants exhausted)', async () => {
+    // The implementation now also retries suffix-expansion variants.
+    // "999 Nonexistent Way" → Way has no alternate, so this is one
+    // call. Set mockResolvedValue (not Once) so any variant call gets
+    // an empty response.
+    mockFetchStingrayJson.mockResolvedValue({
       resultCode: 0,
       payload: {
         sections: [
@@ -133,13 +137,19 @@ describe('redfin_get_by_address tool', () => {
       zip: '99999',
     });
     expect(result.isError).toBeFalsy();
-    const parsed = parseToolResult<{ resolved: boolean; url?: string }>(result);
+    const parsed = parseToolResult<{
+      resolved: boolean;
+      url?: string;
+      attempts?: string[];
+    }>(result);
     expect(parsed.resolved).toBe(false);
     expect(parsed.url).toBeUndefined();
+    expect(parsed.attempts).toBeDefined();
+    expect(parsed.attempts?.length).toBeGreaterThanOrEqual(1);
   });
 
   it('accepts minimal input (just address) and still hits autocomplete', async () => {
-    mockFetchStingrayJson.mockResolvedValueOnce({
+    mockFetchStingrayJson.mockResolvedValue({
       resultCode: 0,
       payload: { sections: [{ name: 'Addresses', rows: [] }] },
     });
@@ -151,5 +161,155 @@ describe('redfin_get_by_address tool', () => {
     expect(parsed.resolved).toBe(false);
     const callPath = mockFetchStingrayJson.mock.calls[0][0] as string;
     expect(callPath).toMatch(/location=158\+Raven\+Blvd\+Lake\+Lure\+NC\+28746/);
+  });
+
+  it('REGRESSION (#43): retries with suffix expansion when the exact form misses — Mallard Rd → Mallard Road', async () => {
+    // First call (input as-typed: "Rd") returns no Addresses row,
+    // simulating Redfin's strict canonical match. Second call (the
+    // suffix-expansion variant: "Road") returns the home.
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: { sections: [{ name: 'Addresses', rows: [] }] },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          sections: [
+            {
+              name: 'Addresses',
+              rows: [
+                {
+                  name: '268 Mallard Road',
+                  subName: 'Lake Lure, NC 28746',
+                  url: '/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345',
+                },
+              ],
+            },
+          ],
+        },
+      });
+
+    const result = await harness.callTool('redfin_get_by_address', {
+      address: '268 Mallard Rd',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+    expect(result.isError).toBeFalsy();
+
+    expect(mockFetchStingrayJson).toHaveBeenCalledTimes(2);
+    // First attempt: "Rd" as typed.
+    expect(mockFetchStingrayJson.mock.calls[0][0]).toMatch(
+      /location=268\+Mallard\+Rd\+/
+    );
+    // Second attempt: "Road" expansion.
+    expect(mockFetchStingrayJson.mock.calls[1][0]).toMatch(
+      /location=268\+Mallard\+Road\+/
+    );
+
+    const parsed = parseToolResult<{
+      resolved: boolean;
+      home_id: string;
+      matched_variant?: string;
+    }>(result);
+    expect(parsed.resolved).toBe(true);
+    expect(parsed.home_id).toBe('12345');
+    // Caller can see WHICH variant matched.
+    expect(parsed.matched_variant).toBe(
+      '268 Mallard Road Lake Lure NC 28746'
+    );
+  });
+
+  it('REGRESSION (#43): same regression in the reverse direction — Road → Rd', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: { sections: [{ name: 'Addresses', rows: [] }] },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          sections: [
+            {
+              name: 'Addresses',
+              rows: [
+                {
+                  name: '268 Mallard Rd',
+                  subName: 'Lake Lure, NC 28746',
+                  url: '/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345',
+                },
+              ],
+            },
+          ],
+        },
+      });
+
+    const result = await harness.callTool('redfin_get_by_address', {
+      address: '268 Mallard Road',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+    const parsed = parseToolResult<{ resolved: boolean; matched_variant?: string }>(
+      result
+    );
+    expect(parsed.resolved).toBe(true);
+    expect(parsed.matched_variant).toBe(
+      '268 Mallard Rd Lake Lure NC 28746'
+    );
+  });
+
+  it('propagates auth/network errors instead of reporting them as "address not found"', async () => {
+    // Simulate a sign-in interstitial / WAF challenge throw from the
+    // transport layer. resolveAddress never throws for "not found" — it
+    // returns null. So anything that DOES throw is a real error signal
+    // (auth failure, network failure, resultCode != 0) that callers
+    // must see, not have silently rewritten into resolved=false.
+    const authError = new Error('Redfin session not authenticated');
+    mockFetchStingrayJson.mockRejectedValueOnce(authError);
+
+    const result = await harness.callTool('redfin_get_by_address', {
+      address: '158 Raven Blvd',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+    // The MCP SDK marshals a thrown handler error into isError: true.
+    expect(result.isError).toBe(true);
+    // Crucially, this must NOT degrade to a successful resolved:false
+    // payload — that would hide auth failures from the caller.
+    const block = result.content[0] as { text: string };
+    expect(block.text).toMatch(/session not authenticated/i);
+  });
+
+  it('does NOT add matched_variant when the input as-typed matched', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        sections: [
+          {
+            name: 'Addresses',
+            rows: [
+              {
+                name: '268 Mallard Rd',
+                subName: 'Lake Lure, NC 28746',
+                url: '/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const result = await harness.callTool('redfin_get_by_address', {
+      address: '268 Mallard Rd',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+    const parsed = parseToolResult<{ matched_variant?: string }>(result);
+    expect(parsed.matched_variant).toBeUndefined();
+    // Only the first attempt fired — no need to retry once we hit.
+    expect(mockFetchStingrayJson).toHaveBeenCalledTimes(1);
   });
 });
