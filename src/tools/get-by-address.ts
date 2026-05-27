@@ -70,13 +70,9 @@ export function registerGetByAddressTools(
       let matchedVariant: string | undefined;
       for (const variant of candidates) {
         attempts.push(variant);
-        // Pass each variant through autocomplete. Wrap individual
-        // failures so one bad candidate doesn't kill the loop.
-        try {
-          match = await resolveAddress(client, variant);
-        } catch {
-          match = null;
-        }
+        // `resolveAddress` returns null for "no match" (drives fallthrough)
+        // and throws for real errors (auth/WAF/network) — let those propagate.
+        match = await resolveAddress(client, variant);
         if (match) {
           matchedVariant = variant;
           break;

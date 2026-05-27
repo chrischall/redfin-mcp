@@ -260,6 +260,29 @@ describe('redfin_get_by_address tool', () => {
     );
   });
 
+  it('propagates auth/network errors instead of reporting them as "address not found"', async () => {
+    // Simulate a sign-in interstitial / WAF challenge throw from the
+    // transport layer. resolveAddress never throws for "not found" — it
+    // returns null. So anything that DOES throw is a real error signal
+    // (auth failure, network failure, resultCode != 0) that callers
+    // must see, not have silently rewritten into resolved=false.
+    const authError = new Error('Redfin session not authenticated');
+    mockFetchStingrayJson.mockRejectedValueOnce(authError);
+
+    const result = await harness.callTool('redfin_get_by_address', {
+      address: '158 Raven Blvd',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+    // The MCP SDK marshals a thrown handler error into isError: true.
+    expect(result.isError).toBe(true);
+    // Crucially, this must NOT degrade to a successful resolved:false
+    // payload — that would hide auth failures from the caller.
+    const block = result.content[0] as { text: string };
+    expect(block.text).toMatch(/session not authenticated/i);
+  });
+
   it('does NOT add matched_variant when the input as-typed matched', async () => {
     mockFetchStingrayJson.mockResolvedValueOnce({
       resultCode: 0,
