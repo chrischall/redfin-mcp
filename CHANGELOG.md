@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0](https://github.com/chrischall/redfin-mcp/compare/v0.6.0...v0.7.0) (2026-05-28)
+
+
+### Features
+
+* migrate to @fetchproxy/server 0.9.x bulk helpers + opt into keepAliveIntervalMs ([#77](https://github.com/chrischall/redfin-mcp/issues/77)) ([40860e7](https://github.com/chrischall/redfin-mcp/commit/40860e771e6e66c73889a53eb9cb7883d7743651))
+* **resolve:** add search-fallback rung (closes [#75](https://github.com/chrischall/redfin-mcp/issues/75)) ([#79](https://github.com/chrischall/redfin-mcp/issues/79)) ([71bd8af](https://github.com/chrischall/redfin-mcp/commit/71bd8af6c6076e074e94c46a06f607cbbdd635a5))
+
+
+### Bug Fixes
+
+* address review nits + add resolve.ts unit tests ([#72](https://github.com/chrischall/redfin-mcp/issues/72) follow-up) ([#76](https://github.com/chrischall/redfin-mcp/issues/76)) ([2f024c1](https://github.com/chrischall/redfin-mcp/commit/2f024c1b14a72179878c78e630b233242a8ca59e))
+* **resolve:** bulk should run same rungs as single (closes [#71](https://github.com/chrischall/redfin-mcp/issues/71)) ([#72](https://github.com/chrischall/redfin-mcp/issues/72)) ([d132607](https://github.com/chrischall/redfin-mcp/commit/d13260734300097de12b7e42d6be15fc5b018bbd))
+
 ## [0.6.0](https://github.com/chrischall/redfin-mcp/compare/v0.5.0...v0.6.0) (2026-05-27)
 
 
