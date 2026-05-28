@@ -178,8 +178,13 @@ describe('resolveAddressWithFallbacks', () => {
   });
 
   it('returns null match and full attempts list when every rung misses', async () => {
-    // No variant resolves — the ladder should walk all of them and
-    // return `match: null` with `matchedVariant` undefined.
+    // No variant resolves — the ladder should walk both autocomplete
+    // variants AND the search-fallback rung's region-resolution call,
+    // and return `match: null` with `matchedVariant` undefined. With
+    // locality info present the search-fallback rung will attempt
+    // region resolution (one extra autocomplete call), so the total
+    // is 3: autocomplete x2 (address variants) + autocomplete x1
+    // (region resolution that itself misses).
     mockFetchStingrayJson.mockResolvedValue(emptyAddressesResponse);
 
     const result = await resolveAddressWithFallbacks(mockClient, {
@@ -189,10 +194,11 @@ describe('resolveAddressWithFallbacks', () => {
       zip: '99999',
     });
 
-    expect(mockFetchStingrayJson).toHaveBeenCalledTimes(2);
+    expect(mockFetchStingrayJson).toHaveBeenCalledTimes(3);
     expect(result.match).toBeNull();
     expect(result.matchedVariant).toBeUndefined();
-    expect(result.attempts).toEqual([
+    // First two are address attempts; third is the search-fallback marker.
+    expect(result.attempts.slice(0, 2)).toEqual([
       '0 Nowhere Ln Nowhere NC 99999',
       '0 Nowhere Lane Nowhere NC 99999',
     ]);
@@ -246,5 +252,356 @@ describe('resolveAddressWithFallbacks', () => {
     });
     expect(mockFetchStingrayJson).not.toHaveBeenCalled();
     expect(result).toEqual({ match: null, attempts: [] });
+  });
+
+  it('reports matched_via: "autocomplete" when an autocomplete rung hits', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        sections: [
+          {
+            name: 'Addresses',
+            rows: [
+              {
+                name: '158 Raven Blvd',
+                subName: 'Lake Lure, NC 28746',
+                url: '/NC/Lake-Lure/158-Raven-Blvd-28746/home/112653221',
+                id: '112653221',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const result = await resolveAddressWithFallbacks(mockClient, {
+      street: '158 Raven Blvd',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+    expect(result.matchedVia).toBe('autocomplete');
+  });
+});
+
+// ---------------------------------------------------------------------
+// Search-fallback rung (#75)
+//
+// When every autocomplete variant misses, fall through to a gis search
+// bounded by `{city, state}` (or `{zip}`), reuse `assertRegionMatches`
+// guards, and fuzzy-match returned homes against the input street's
+// tokens (suffix-expansion-aware). Returns a synthetic `RedfinAddress`
+// for the matched home and tags `matched_via: 'search_fallback'`.
+// ---------------------------------------------------------------------
+describe('resolveAddressWithFallbacks — search-fallback rung (#75)', () => {
+  const mockFetchStingrayJson = vi.fn();
+  const mockClient = {
+    fetchStingrayJson: mockFetchStingrayJson,
+  } as unknown as RedfinClient;
+
+  beforeEach(() => vi.clearAllMocks());
+
+  const emptyAddressesResponse = {
+    resultCode: 0,
+    payload: { sections: [{ name: 'Addresses', rows: [] }] },
+  };
+
+  /** Build an autocomplete payload that resolves a Places region. */
+  const placesPayload = (region_id: number, name: string, sub: string) => ({
+    resultCode: 0,
+    payload: {
+      sections: [
+        {
+          name: 'Places',
+          rows: [
+            {
+              id: `2_${region_id}`,
+              name,
+              subName: sub,
+              url: `/city/${region_id}/NC/${name.replace(/ /g, '-')}`,
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  /** Build a gis search response with the given home rows. */
+  const gisPayload = (
+    homes: Array<{
+      propertyId: number;
+      url: string;
+      streetLine: string;
+      city: string;
+      state: string;
+      zip: string;
+    }>,
+    serviceRegionName = 'Lake-Lure'
+  ) => ({
+    resultCode: 0,
+    payload: {
+      serviceRegionName,
+      homes: homes.map((h) => ({
+        propertyId: h.propertyId,
+        url: h.url,
+        streetLine: { value: h.streetLine },
+        city: h.city,
+        state: h.state,
+        zip: h.zip,
+      })),
+    },
+  });
+
+  it('falls back to gis search when autocomplete misses and gis returns a single matching hit', async () => {
+    // 1) Autocomplete (input) → empty
+    // 2) Autocomplete (suffix-expansion) → empty
+    // 3) resolveRegion for "Lake Lure NC" → Places hit (region 2_555)
+    // 4) gis search bounded to that region → ONE home with matching tokens
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        // Region-resolution query is just "city state" (no street).
+        if (q === 'Lake Lure NC') {
+          return placesPayload(555, 'Lake Lure', 'NC, USA');
+        }
+        // All address queries miss.
+        return emptyAddressesResponse;
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        return gisPayload([
+          {
+            propertyId: 99001,
+            url: '/NC/Lake-Lure/212-Ridgeway-Rd-28746/home/99001',
+            streetLine: '212 Ridgeway Rd',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+          },
+        ]);
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await resolveAddressWithFallbacks(mockClient, {
+      street: '212 Ridgeway Rd',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+
+    expect(result.match).not.toBeNull();
+    expect(result.match?.home_id).toBe('99001');
+    expect(result.matchedVia).toBe('search_fallback');
+    // Attempts records both rungs (autocomplete + search-fallback marker).
+    expect(result.attempts.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('fuzzy-matches the right home when gis returns multiple hits — street-token equality picks the winner', async () => {
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (q === 'Lake Lure NC') {
+          return placesPayload(555, 'Lake Lure', 'NC, USA');
+        }
+        return emptyAddressesResponse;
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        return gisPayload([
+          {
+            propertyId: 1,
+            url: '/NC/Lake-Lure/100-Oakwood-Dr-28746/home/1',
+            streetLine: '100 Oakwood Dr',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+          },
+          {
+            propertyId: 2,
+            url: '/NC/Lake-Lure/231-Bluebird-Rd-28746/home/2',
+            streetLine: '231 Bluebird Rd',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+          },
+          {
+            propertyId: 3,
+            url: '/NC/Lake-Lure/50-Other-Way-28746/home/3',
+            streetLine: '50 Other Way',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+          },
+        ]);
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await resolveAddressWithFallbacks(mockClient, {
+      street: '231 Bluebird Rd',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+
+    expect(result.match?.home_id).toBe('2');
+    expect(result.matchedVia).toBe('search_fallback');
+  });
+
+  it('fuzzy-match is suffix-expansion-aware — "Highland Heights" matches a gis row of "Highland Heights" regardless of trailing suffix variant', async () => {
+    // Input has no suffix token; gis returns "Highland Heights"
+    // (which has a number prefix and no suffix). The token-equality
+    // matcher must still pick it up after suffix-expansion normalization.
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (q === 'Lake Lure NC') {
+          return placesPayload(555, 'Lake Lure', 'NC, USA');
+        }
+        return emptyAddressesResponse;
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        return gisPayload([
+          {
+            propertyId: 42,
+            url: '/NC/Lake-Lure/181-Highland-Heights-28746/home/42',
+            streetLine: '181 Highland Heights',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+          },
+        ]);
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await resolveAddressWithFallbacks(mockClient, {
+      street: '181 Highland Heights',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+
+    expect(result.match?.home_id).toBe('42');
+    expect(result.matchedVia).toBe('search_fallback');
+  });
+
+  it('returns null when region resolution fails (city/state not found in Places)', async () => {
+    // Autocomplete misses on the address. The region-resolution query
+    // (city + state) also returns no Places row → the search-fallback
+    // rung cannot proceed and the resolver returns match: null.
+    mockFetchStingrayJson.mockResolvedValue(emptyAddressesResponse);
+
+    const result = await resolveAddressWithFallbacks(mockClient, {
+      street: '999 Bogus Way',
+      city: 'Notarealcity',
+      state: 'NC',
+      zip: '99999',
+    });
+
+    expect(result.match).toBeNull();
+    expect(result.matchedVia).toBeUndefined();
+  });
+
+  it('does not run search fallback when neither city/state nor zip are provided', async () => {
+    // Without any locality info we have nothing to bound the search by,
+    // so the search-fallback rung must be skipped — match stays null
+    // and only autocomplete calls fire.
+    mockFetchStingrayJson.mockResolvedValue(emptyAddressesResponse);
+
+    await resolveAddressWithFallbacks(mockClient, {
+      street: '999 Bogus Way',
+    });
+
+    for (const call of mockFetchStingrayJson.mock.calls) {
+      expect(call[0]).not.toMatch(/\/stingray\/api\/gis/);
+    }
+  });
+
+  it('returns null when gis returns no homes matching the street tokens', async () => {
+    // Region resolves cleanly + gis returns unrelated homes → no match.
+    // No false-positive on first-row even though region resolution succeeded.
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (q === 'Lake Lure NC') {
+          return placesPayload(555, 'Lake Lure', 'NC, USA');
+        }
+        return emptyAddressesResponse;
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        return gisPayload([
+          {
+            propertyId: 9,
+            url: '/NC/Lake-Lure/1-Different-Rd-28746/home/9',
+            streetLine: '1 Different Rd',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+          },
+        ]);
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await resolveAddressWithFallbacks(mockClient, {
+      street: '212 Ridgeway Rd',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+
+    expect(result.match).toBeNull();
+  });
+
+  it("propagates assertRegionMatches errors — does NOT silently swallow Redfin's cross-continent fallback", async () => {
+    // Reuse the existing silent-fallback guard. If gis returns
+    // home rows from a state that disagrees with the ZIP we passed,
+    // the rung must surface the assertion error (not eat it and
+    // degrade to resolved=false).
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (q.includes('Lake Lure')) {
+          return placesPayload(555, 'Lake Lure', 'NC, USA');
+        }
+        return emptyAddressesResponse;
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        // ZIP 28746 → NC, but gis returned WA homes (the canonical #46 case).
+        return gisPayload(
+          [
+            {
+              propertyId: 1,
+              url: '/WA/Seattle/100-Fremont-Ave-98103/home/1',
+              streetLine: '100 Fremont Ave',
+              city: 'Seattle',
+              state: 'WA',
+              zip: '98103',
+            },
+          ],
+          'Seattle'
+        );
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    await expect(
+      resolveAddressWithFallbacks(mockClient, {
+        street: '212 Ridgeway Rd',
+        city: 'Lake Lure',
+        state: 'NC',
+        zip: '28746',
+      })
+    ).rejects.toThrow(/ZIP 28746/);
   });
 });

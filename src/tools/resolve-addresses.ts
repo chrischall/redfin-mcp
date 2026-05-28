@@ -45,6 +45,9 @@ interface ResolvedAddressRow {
    * caller passed a structured input and needs to see what we
    * actually sent to autocomplete. */
   query: string;
+  /** Which rung surfaced the match (`'autocomplete'` or
+   * `'search_fallback'`, #75). Present only on resolved rows. */
+  matched_via?: 'autocomplete' | 'search_fallback';
   /** Variant that actually matched (only populated when a fallback
    * variant — e.g. suffix-expanded `Rd` → `Road` — caught a row the
    * as-typed query missed). Mirrors the field on `redfin_get_by_address`
@@ -76,9 +79,10 @@ async function resolveOne(
   const parts = inputToParts(input);
   try {
     // Shared with `redfin_get_by_address`. Both tools run the same
-    // fallback rungs (input-as-typed + suffix expansion) so bulk
-    // callers see the same hit rate as the single tool. See #71.
-    const { match, attempts, matchedVariant } =
+    // fallback rungs (autocomplete + suffix expansion + search fallback)
+    // so bulk callers see the same hit rate as the single tool. See
+    // #71 (parity audit) and #75 (search-fallback rung).
+    const { match, attempts, matchedVariant, matchedVia } =
       await resolveAddressWithFallbacks(client, parts);
     const query = attempts[0] ?? parts.street;
     if (!match) return { input, query, resolved: false };
@@ -92,6 +96,7 @@ async function resolveOne(
       city: match.city,
       state: match.state,
       zip: match.zip,
+      matched_via: matchedVia,
       // Same convention as the single tool: only surface the variant
       // when it's something OTHER than the as-typed query.
       ...(matchedVariant && matchedVariant !== query

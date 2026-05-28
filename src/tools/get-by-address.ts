@@ -8,17 +8,19 @@ import { resolveAddressWithFallbacks } from '../resolve.js';
  * `redfin_get_by_address`: resolve a free-text address to a Redfin
  * canonical home URL + home_id.
  *
- * Implementation: hit `/stingray/do/location-autocomplete` once with
- * the address joined into a single query string. Look at the
- * `Addresses` section. The first row carries the canonical home URL
- * (e.g. `/NC/Lake-Lure/158-Raven-Blvd-28746/home/112653221`); we parse
- * it for `home_id` and return both. Degrades to `resolved: false`
- * when no Addresses row comes back.
+ * Implementation walks the shared rung ladder in `resolveAddressWithFallbacks`:
+ *   1. autocomplete (input as-typed)
+ *   2. autocomplete (suffix-expansion: Rd ↔ Road, etc.)
+ *   3. search fallback (#75) — when autocomplete misses entirely and
+ *      locality info is provided, resolve the city/state to a region,
+ *      fire a gis search bounded by that region, and fuzzy-match
+ *      returned home rows against the input street's tokens.
  *
- * This is the cleanest entry point for "I have an address; what's its
- * Redfin home_id?" — one round-trip, no gis fallback, no region
- * lookup. Use `redfin_get_property` afterward if you need the full
- * property record.
+ * Degrades to `resolved: false` when every rung misses. `matched_via`
+ * surfaces which rung resolved the address ('autocomplete' or
+ * 'search_fallback') so callers can see whether they hit the direct
+ * path or the broader search-bounded fallback. Use
+ * `redfin_get_property` afterward if you need the full property record.
  */
 
 export function registerGetByAddressTools(
@@ -30,7 +32,7 @@ export function registerGetByAddressTools(
     {
       title: 'Resolve an address to its Redfin canonical URL + home_id',
       description:
-        "Resolve a free-text address (with optional city/state/zip) to its Redfin canonical home URL and home_id. Hits the autocomplete endpoint and returns the first Addresses match. Degrades to `resolved: false` when no listing is found — does not throw. KNOWN GOTCHA: Redfin's autocomplete is strict about the upstream canonical street-suffix form (`Road` vs `Rd`, `Lane` vs `Ln`, etc.) — `268 Mallard Rd` may miss while `268 Mallard Road` resolves. Companion issue #43 tracks an abbreviation-expansion retry; until that lands, callers should try both forms on a miss. Address discrepancies across MLS feeds are common (the `109 vs 169 Overlook Point Ln` cross-MLS case is a regular occurrence) — companion `address_alternates[]` field (#42) surfaces conflicts when present. Use this when you have a property address and need its Redfin home_id for follow-on calls (e.g. `redfin_get_property`). Read-only, no auth required.",
+        "Resolve a free-text address (with optional city/state/zip) to its Redfin canonical home URL and home_id. Walks a 3-rung ladder: (1) autocomplete as-typed, (2) autocomplete with suffix expansion (Rd ↔ Road, Ln ↔ Lane, etc.), (3) search fallback (#75) — when autocomplete misses entirely and city/state are provided, resolves the locality to a region, fires a bounded gis search, and fuzzy-matches the input street tokens against returned homes. `matched_via` is `'autocomplete'` or `'search_fallback'`. Degrades to `resolved: false` when every rung misses — does not throw. Address discrepancies across MLS feeds are common (the `109 vs 169 Overlook Point Ln` cross-MLS case is a regular occurrence) — companion `address_alternates[]` field (#42) surfaces conflicts when present. Use this when you have a property address and need its Redfin home_id for follow-on calls (e.g. `redfin_get_property`). Read-only, no auth required.",
       annotations: {
         title: 'Resolve an address to its Redfin canonical URL + home_id',
         readOnlyHint: true,
@@ -50,12 +52,12 @@ export function registerGetByAddressTools(
       },
     },
     async (input) => {
-      // Delegate the rung-walking (input-as-typed + suffix-expansion
-      // variants) to the shared `resolveAddressWithFallbacks` helper.
-      // Both `redfin_get_by_address` and `redfin_resolve_addresses`
+      // Delegate the rung-walking (autocomplete + suffix-expansion +
+      // search-fallback) to the shared `resolveAddressWithFallbacks`
+      // helper. Both `redfin_get_by_address` and `redfin_resolve_addresses`
       // call this same helper so the fallback strategy stays in sync.
-      // See issue #71 for the parity audit.
-      const { match, attempts, matchedVariant } =
+      // See issue #71 (parity audit) and #75 (search-fallback rung).
+      const { match, attempts, matchedVariant, matchedVia } =
         await resolveAddressWithFallbacks(client, {
           street: input.address,
           city: input.city,
@@ -78,6 +80,11 @@ export function registerGetByAddressTools(
         city: match.city,
         state: match.state,
         zip: match.zip,
+        // Which rung surfaced the match — `'autocomplete'` or
+        // `'search_fallback'` (#75). Always present on success so
+        // callers can tell whether they hit the direct path or the
+        // gis-search fallback.
+        matched_via: matchedVia,
         // When the input as-typed matched, omit the variant signal —
         // the common case stays terse. When a suffix-swap variant
         // matched, surface it so the caller can record which form
