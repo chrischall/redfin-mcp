@@ -39,4 +39,22 @@ describe('FetchproxyTransport — constructor options', () => {
     expect(constructorCalls.length).toBe(1);
     expect(constructorCalls[0]!.keepAliveIntervalMs).toBe(25_000);
   });
+
+  it('omits fetchTimeoutMs when not explicitly provided (relies on server-side 30s default)', async () => {
+    const { FetchproxyTransport } = await import(
+      '../src/transport-fetchproxy.js'
+    );
+    new FetchproxyTransport({ version: '0.0.0-test' });
+    expect(constructorCalls.length).toBe(1);
+    expect(constructorCalls[0]!.fetchTimeoutMs).toBeUndefined();
+  });
+
+  it('forwards fetchTimeoutMs to the FetchproxyServer constructor when explicitly provided', async () => {
+    const { FetchproxyTransport } = await import(
+      '../src/transport-fetchproxy.js'
+    );
+    new FetchproxyTransport({ version: '0.0.0-test', fetchTimeoutMs: 20_000 });
+    expect(constructorCalls.length).toBe(1);
+    expect(constructorCalls[0]!.fetchTimeoutMs).toBe(20_000);
+  });
 });
