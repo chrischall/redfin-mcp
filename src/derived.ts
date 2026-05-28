@@ -10,7 +10,30 @@
  *   - #41: portal_url_hyperlink (Google-Sheets =HYPERLINK(...) formula)
  *   - #42: address_alternates[] (MLS-feed mismatch surfacing)
  *   - #50: last_sold_date + last_sold_price (from price-history)
+ *   - #82: lot_size_acres (sq ft → acres, derived alongside #81's lot_size)
  */
+
+/** Square feet in one acre. */
+const SQFT_PER_ACRE = 43_560;
+
+/**
+ * Derive lot size in acres from a square-foot lot size, rounded to 2 dp
+ * (#82). Pairs with the raw `lot_size` (#81) — acreage is the unit that
+ * matters for rural/mountain/land listings.
+ *
+ * Null-safe: returns `null` (never `0`) when the input is missing,
+ * non-numeric, or `0` — a `0` lot is treated as absent (condos / missing
+ * public records), matching how `lot_size` itself nulls out rather than
+ * reporting a real "0 acre" lot.
+ */
+export function lotSizeAcres(
+  lotSqFt: number | undefined | null
+): number | null {
+  if (typeof lotSqFt !== 'number' || !Number.isFinite(lotSqFt) || lotSqFt <= 0) {
+    return null;
+  }
+  return Math.round((lotSqFt / SQFT_PER_ACRE) * 100) / 100;
+}
 
 /**
  * Convert an HOA `{amount, frequency}` to monthly USD, rounded to the

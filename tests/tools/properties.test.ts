@@ -247,6 +247,27 @@ describe('format', () => {
     expect(out.address).toBeUndefined();
     expect(out.url).toBe('https://www.redfin.com/h');
   });
+
+  it('emits lot_size + lot_size_acres from the lotSqFt option (#81, #82)', () => {
+    const out = format(
+      { propertyId: 1, listingId: 2 },
+      { addressSectionInfo: { streetAddress: '158 Raven Blvd' } },
+      'https://www.redfin.com/x',
+      { lotSqFt: 45_738 }
+    );
+    expect(out.lot_size).toBe(45_738);
+    expect(out.lot_size_acres).toBe(1.05);
+  });
+
+  it('lot_size + lot_size_acres are null (not 0) when lotSqFt is absent (#81, #82)', () => {
+    const out = format(
+      { propertyId: 1, listingId: 2 },
+      { addressSectionInfo: { streetAddress: '155 Quail Cove Blvd' } },
+      'https://www.redfin.com/x'
+    );
+    expect(out.lot_size).toBeNull();
+    expect(out.lot_size_acres).toBeNull();
+  });
 });
 
 describe('redfin_get_property tool', () => {
@@ -615,6 +636,84 @@ describe('redfin_get_property tool', () => {
     expect(parsed.tax_history).toHaveLength(2);
     expect(parsed.tax_history?.[0].year).toBe(2024);
     expect(parsed.price_history).toBeUndefined();
+  });
+
+  it('surfaces lot_size + lot_size_acres for a SFH (158 Raven Blvd, #81/#82)', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        // ATF
+        resultCode: 0,
+        payload: {
+          addressSectionInfo: {
+            streetAddress: '158 Raven Blvd',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        // BTF — real basicInfo shape captured live for home_id 112653221
+        resultCode: 0,
+        payload: {
+          publicRecordsInfo: {
+            basicInfo: {
+              propertyTypeName: 'Single Family Residential',
+              lotSqFt: 45_738,
+            },
+          },
+        },
+      });
+    const result = await harness.callTool('redfin_get_property', {
+      property_id: 112653221,
+      listing_id: 211233165,
+    });
+    const parsed = parseToolResult<{
+      lot_size: number | null;
+      lot_size_acres: number | null;
+    }>(result);
+    expect(parsed.lot_size).toBe(45_738);
+    expect(parsed.lot_size_acres).toBe(1.05);
+  });
+
+  it('nulls lot_size + lot_size_acres for a condo with no lot (155 Quail Cove, #81/#82)', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        // ATF
+        resultCode: 0,
+        payload: {
+          addressSectionInfo: {
+            streetAddress: '155 Quail Cove Blvd',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        // BTF — real condo basicInfo: lotSqFt is absent entirely
+        resultCode: 0,
+        payload: {
+          publicRecordsInfo: {
+            basicInfo: {
+              propertyTypeName: 'Condo/Co-op',
+            },
+          },
+        },
+      });
+    const result = await harness.callTool('redfin_get_property', {
+      property_id: 112652095,
+      listing_id: 212820258,
+    });
+    const parsed = parseToolResult<{
+      lot_size: number | null;
+      lot_size_acres: number | null;
+    }>(result);
+    expect(parsed.lot_size).toBeNull();
+    expect(parsed.lot_size_acres).toBeNull();
+    // Must be null, never the 0 placeholder.
+    expect(parsed.lot_size).not.toBe(0);
+    expect(parsed.lot_size_acres).not.toBe(0);
   });
 
   it('emits address_alternates when MLS-feed addresses differ from primary (#42)', async () => {

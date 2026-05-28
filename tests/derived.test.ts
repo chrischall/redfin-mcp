@@ -5,6 +5,7 @@ import {
   collectAddressAlternates,
   hoaToMonthlyUsd,
   lastSold,
+  lotSizeAcres,
   priceDrop,
 } from '../src/derived.js';
 
@@ -87,6 +88,35 @@ describe('cleanTaxAnnual', () => {
   });
   it('real value passes through', () => {
     expect(cleanTaxAnnual(5400)).toEqual({ tax_annual: 5400, tax_status: null });
+  });
+});
+
+describe('lotSizeAcres', () => {
+  it('45,738 sq ft → 1.05 acres (158 Raven Blvd)', () => {
+    // 45738 / 43560 = 1.0499… → rounds to 1.05
+    expect(lotSizeAcres(45_738)).toBe(1.05);
+  });
+  it('13,503 sq ft → 0.31 acres', () => {
+    expect(lotSizeAcres(13_503)).toBe(0.31);
+  });
+  it('94,089 sq ft → 2.16 acres', () => {
+    expect(lotSizeAcres(94_089)).toBe(2.16);
+  });
+  it('rounds to 2 decimal places', () => {
+    // 43560 → exactly 1.00
+    expect(lotSizeAcres(43_560)).toBe(1.0);
+    // 21780 → 0.5 exactly
+    expect(lotSizeAcres(21_780)).toBe(0.5);
+  });
+  it('null lot size → null (not 0)', () => {
+    expect(lotSizeAcres(null)).toBeNull();
+    expect(lotSizeAcres(undefined)).toBeNull();
+  });
+  it('zero lot size → null (treated as missing, never 0 acres)', () => {
+    expect(lotSizeAcres(0)).toBeNull();
+  });
+  it('non-numeric input → null', () => {
+    expect(lotSizeAcres(NaN)).toBeNull();
   });
 });
 
