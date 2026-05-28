@@ -4,7 +4,6 @@ import { textResult } from '../mcp.js';
 import {
   FetchproxyBridgeDownError,
   FetchproxyTimeoutError,
-  classifyBridgeError,
 } from '../transport-fetchproxy.js';
 
 /**
@@ -117,38 +116,52 @@ export function registerHealthcheckTools(
       inputSchema: {},
     },
     async () => {
-      // We read bridgeStatus() once at the bottom (after the probe) so
-      // the freshness counters in the response include this very call.
-      // Don't read it up front — that snapshot would be stale.
-      const start = Date.now();
-      let probe: HealthcheckResult['probe'] = {
-        url: `https://www.redfin.com${PROBE_PATH}`,
-        elapsed_ms: 0,
-      };
+      // 0.10.0+: the transport half of the probe — run the fetch, time
+      // it, classify any thrown error, and project the POST-probe
+      // bridgeHealth() (so the freshness counters reflect this very
+      // call) — now lives in `@fetchproxy/server`'s `runProbe`. We pass
+      // `client.fetchHtml` as the probe fn so Redfin's own non-2xx /
+      // sign-in guards still fire inside the round-trip, and capture the
+      // body length (success) and the thrown typed error (failure) in
+      // the closure so we can surface the Redfin-specific extras
+      // (`body_length`, `role_at_failure`, `elapsed_ms_at_timeout`,
+      // `bridge_hint`) that `runProbe` doesn't carry on its own.
+      let bodyLength = 0;
+      let thrown: unknown;
+      const probeResult = await client.runProbe(async (path) => {
+        try {
+          const html = await client.fetchHtml(path);
+          bodyLength = html.length;
+          return html;
+        } catch (e) {
+          thrown = e;
+          throw e;
+        }
+      }, PROBE_PATH);
+
+      const bridge = probeResult.bridge;
+      const probe: HealthcheckResult['probe'] = probeResult.ok
+        ? {
+            url: `https://www.redfin.com${PROBE_PATH}`,
+            elapsed_ms: probeResult.elapsed_ms,
+            status: 200, // fetchHtml throws on non-2xx; ok means 2xx
+            body_length: bodyLength,
+          }
+        : {
+            url: `https://www.redfin.com${PROBE_PATH}`,
+            elapsed_ms: probeResult.elapsed_ms,
+          };
+
       let error: HealthcheckResult['error'];
-      let ok = false;
-      try {
-        const html = await client.fetchHtml(PROBE_PATH);
-        probe = {
-          url: `https://www.redfin.com${PROBE_PATH}`,
-          elapsed_ms: Date.now() - start,
-          status: 200, // fetchHtml throws on non-2xx; reaching here means 2xx
-          body_length: html.length,
-        };
-        ok = true;
-      } catch (e) {
-        const elapsedMs = Date.now() - start;
-        // 0.8.0+: discriminate with the server's own helper rather than
-        // an instanceof ladder. The helper enforces "subclass before
-        // parent" once, so we can't accidentally collapse Timeout /
-        // BridgeDown onto the generic Protocol arm by reordering.
-        // role / port / elapsedMs / hint are now carried on the typed
-        // errors directly — no post-throw `bridgeStatus()` snapshot.
-        const kind = classifyBridgeError(e);
-        const message = e instanceof Error ? e.message : String(e);
+      if (probeResult.error) {
+        // `runProbe` classifies via the same `classifyBridgeError` helper
+        // ("subclass before parent" once), so we just branch on its kind.
+        // The typed-error extras (role / elapsedMs / hint) come off the
+        // error we captured in the probe fn above.
+        const { kind, message } = probeResult.error;
         switch (kind) {
           case 'timeout': {
-            const te = e as FetchproxyTimeoutError;
+            const te = thrown as FetchproxyTimeoutError;
             error = {
               kind: 'timeout',
               message,
@@ -158,7 +171,7 @@ export function registerHealthcheckTools(
             break;
           }
           case 'bridge_down': {
-            const bd = e as FetchproxyBridgeDownError;
+            const bd = thrown as FetchproxyBridgeDownError;
             error = {
               kind: 'bridge_down',
               message,
@@ -180,28 +193,25 @@ export function registerHealthcheckTools(
             error = { kind: 'other', message };
             break;
         }
-        probe = { ...probe, elapsed_ms: elapsedMs };
       }
-      // Re-read after the probe — the server's bridgeHealth() counters
-      // just updated, so this snapshot reflects this very call.
-      const postProbeBridge = client.bridgeStatus();
+
       const result: HealthcheckResult = {
-        ok,
+        ok: probeResult.ok,
         bridge: {
-          role: postProbeBridge.role,
-          port: postProbeBridge.port,
-          server_version: postProbeBridge.serverVersion,
-          fetch_timeout_ms: postProbeBridge.fetchTimeoutMs,
-          last_success_at: postProbeBridge.lastSuccessAt,
-          last_failure_at: postProbeBridge.lastFailureAt,
-          last_failure_reason: postProbeBridge.lastFailureReason,
-          consecutive_failures: postProbeBridge.consecutiveFailures,
+          role: bridge.role,
+          port: bridge.port,
+          server_version: bridge.server_version,
+          fetch_timeout_ms: bridge.fetch_timeout_ms,
+          last_success_at: bridge.last_success_at,
+          last_failure_at: bridge.last_failure_at,
+          last_failure_reason: bridge.last_failure_reason,
+          consecutive_failures: bridge.consecutive_failures,
         },
         probe,
         ...(error ? { error } : {}),
         hint: hintFor({
-          ok,
-          role: postProbeBridge.role,
+          ok: probeResult.ok,
+          role: bridge.role,
           errorKind: error?.kind,
         }),
       };

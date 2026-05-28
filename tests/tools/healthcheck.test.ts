@@ -5,8 +5,9 @@ import {
   FetchproxyBridgeDownError,
   FetchproxyProtocolError,
   FetchproxyTimeoutError,
+  classifyBridgeError,
 } from '../../src/transport-fetchproxy.js';
-import type { BridgeStatus } from '../../src/transport.js';
+import type { BridgeProbeResult, BridgeStatus } from '../../src/transport.js';
 import { createTestHarness, parseToolResult } from '../helpers.js';
 
 const DEFAULT_STATUS: BridgeStatus = {
@@ -24,11 +25,52 @@ function stubClient(args: {
   status?: Partial<BridgeStatus>;
   fetchHtml?: ReturnType<typeof vi.fn>;
 }): RedfinClient {
+  const status: BridgeStatus = { ...DEFAULT_STATUS, ...(args.status ?? {}) };
+  const fetchHtml =
+    args.fetchHtml ?? vi.fn().mockResolvedValue('User-agent: *');
+  // 0.10.0+: the tool drives `client.runProbe(fetchFn, path)` (which in
+  // the real client delegates to `@fetchproxy/server`'s `runProbe`).
+  // Faithfully reproduce its contract here: run the probe fn, time it,
+  // classify any throw via the same `classifyBridgeError` helper, and
+  // project a snake-cased `bridge` block off the (post-probe) status.
+  const runProbe = vi
+    .fn()
+    .mockImplementation(
+      async (
+        fetchFn: (path: string) => Promise<unknown>,
+        probePath: string
+      ): Promise<BridgeProbeResult> => {
+        const bridge = {
+          role: status.role,
+          port: status.port,
+          server_version: status.serverVersion,
+          fetch_timeout_ms: status.fetchTimeoutMs,
+          last_success_at: status.lastSuccessAt,
+          last_failure_at: status.lastFailureAt,
+          last_failure_reason: status.lastFailureReason,
+          consecutive_failures: status.consecutiveFailures,
+        };
+        const start = Date.now();
+        try {
+          await fetchFn(probePath);
+          return { ok: true, elapsed_ms: Date.now() - start, bridge };
+        } catch (e) {
+          return {
+            ok: false,
+            elapsed_ms: Date.now() - start,
+            bridge,
+            error: {
+              kind: classifyBridgeError(e),
+              message: e instanceof Error ? e.message : String(e),
+            },
+          };
+        }
+      }
+    );
   return {
-    bridgeStatus: vi
-      .fn()
-      .mockReturnValue({ ...DEFAULT_STATUS, ...(args.status ?? {}) }),
-    fetchHtml: args.fetchHtml ?? vi.fn().mockResolvedValue('User-agent: *'),
+    bridgeStatus: vi.fn().mockReturnValue(status),
+    fetchHtml,
+    runProbe,
   } as unknown as RedfinClient;
 }
 

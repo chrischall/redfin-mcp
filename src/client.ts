@@ -15,8 +15,8 @@
 // Error mapping (non-2xx, sign-in interstitial, empty 204 body) lives
 // here so tool authors never have to think about it.
 import type {
+  BridgeProbeResult,
   BridgeStatus,
-  FetchInit,
   FetchResult,
   RedfinTransport,
 } from './transport.js';
@@ -62,6 +62,20 @@ export class RedfinClient {
   }
 
   /**
+   * 0.10.0+: run one healthcheck probe through `fetchFn`, returning the
+   * server's `BridgeProbeResult` (ok / elapsed_ms / classified error /
+   * post-probe bridge projection). The probe-execution + timing +
+   * classification + bridge snapshot now live in `@fetchproxy/server`;
+   * `redfin_healthcheck` keeps only its Redfin-specific hint text.
+   */
+  runProbe(
+    fetchFn: (path: string) => Promise<unknown>,
+    probePath: string
+  ): Promise<BridgeProbeResult> {
+    return this.transport.runProbe(fetchFn, probePath);
+  }
+
+  /**
    * GET a redfin.com path, return the HTML body. Throws on non-2xx or
    * sign-in interstitial.
    */
@@ -85,36 +99,18 @@ export class RedfinClient {
     } = {}
   ): Promise<T> {
     const method = init.method ?? 'POST';
-    const serialised: FetchInit = {
-      path,
-      method,
-      headers: {
-        Accept: 'application/json',
-        ...(method !== 'GET' && init.body !== undefined
-          ? { 'Content-Type': 'application/json' }
-          : {}),
-        ...(init.headers ?? {}),
-      },
-      body:
-        method === 'GET' || init.body === undefined
-          ? undefined
-          : JSON.stringify(init.body),
-    };
-    const result = await this.transport.fetch(serialised);
+    // 0.10.0+: serialize-body / JSON-header-default / 204-as-null /
+    // JSON.parse all live in the server's `requestJson` now. It returns
+    // BOTH the parsed `data` and the raw `result` and runs NO status /
+    // sign-in checks — those guards differ per site, so we keep Redfin's
+    // here over `result`.
+    const { data, result } = await this.transport.requestJson<T>(method, path, {
+      headers: init.headers,
+      body: init.body,
+    });
     this.throwIfNotOk(result, method, path);
     this.throwIfSignInPage(result);
-    if (result.status === 204 || result.body === '') {
-      return null as T;
-    }
-    try {
-      return JSON.parse(result.body) as T;
-    } catch (e) {
-      throw new Error(
-        `Redfin ${method} ${path} — response was not JSON: ${String(
-          (e as Error).message
-        )}`
-      );
-    }
+    return data as T;
   }
 
   /**

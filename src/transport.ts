@@ -36,6 +36,18 @@ export interface FetchResult {
  */
 export type BridgeStatus = import('@fetchproxy/server').BridgeHealth;
 
+/** 0.10.0+ result of `RedfinTransport.requestJson` — the parsed `data`
+ *  (null on 204 / empty body) plus the raw result triple so the client
+ *  can run its own `throwIfNotOk` / sign-in guards over `result`. */
+export interface RequestJsonResult<T> {
+  data: T | null;
+  result: FetchResult;
+}
+
+/** 0.10.0+ result of `RedfinTransport.runProbe` — projection of the
+ *  underlying `@fetchproxy/server` `BridgeProbeResult`. */
+export type BridgeProbeResult = import('@fetchproxy/server').BridgeProbeResult;
+
 export interface RedfinTransport {
   /** Bring the transport up. Idempotent. */
   start(): Promise<void>;
@@ -46,6 +58,29 @@ export interface RedfinTransport {
   /** Round-trip one request through the bridge. Resolves to a result
    *  triple even for non-2xx statuses — the client maps HTTP errors. */
   fetch(init: FetchInit): Promise<FetchResult>;
+
+  /** 0.10.0+: method-generic JSON round-trip. Serializes the body, sets
+   *  the JSON headers, handles 204/empty as `data: null`, and returns
+   *  BOTH the parsed `data` and the raw `result` so the client keeps its
+   *  per-site `throwIfNotOk` / sign-in guards. Resolves for any HTTP
+   *  status; bridge-level failures still throw the typed errors. */
+  requestJson<T>(
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    path: string,
+    opts?: {
+      headers?: Record<string, string>;
+      body?: unknown;
+    }
+  ): Promise<RequestJsonResult<T>>;
+
+  /** 0.10.0+: run one healthcheck probe through `fetchFn`, measure the
+   *  elapsed round-trip, classify any thrown error, and project the
+   *  post-probe bridge health. The tool's hint text stays in the
+   *  consumer. */
+  runProbe(
+    fetchFn: (path: string) => Promise<unknown>,
+    probePath: string
+  ): Promise<BridgeProbeResult>;
 
   /** Diagnostic snapshot of the bridge. Safe to call any time. */
   status(): BridgeStatus;
