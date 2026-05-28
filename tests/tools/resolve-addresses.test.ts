@@ -319,4 +319,87 @@ describe('redfin_resolve_addresses tool', () => {
     expect(bulkParsed.results[1].resolved).toBe(true);
     expect(bulkParsed.results[1].home_id).toBe('222');
   });
+
+  // -- PARITY: search-fallback rung (#75) ----------------------------
+  //
+  // The newest rung — when autocomplete misses everywhere, fall through
+  // to a gis search bounded by `{city, state}` and fuzzy-match. Bulk
+  // must walk the same rungs as single, otherwise the round-3 corpus
+  // (rural/mountain MLS addresses where autocomplete is blind but
+  // search has the listing) regresses on the bulk path.
+
+  it('PARITY (#75): bulk runs the same search-fallback rung as single — autocomplete misses, gis hit picked up', async () => {
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (q === 'Lake Lure NC') {
+          return {
+            resultCode: 0,
+            payload: {
+              sections: [
+                {
+                  name: 'Places',
+                  rows: [
+                    {
+                      id: '2_555',
+                      name: 'Lake Lure',
+                      subName: 'NC, USA',
+                      url: '/city/555/NC/Lake-Lure',
+                    },
+                  ],
+                },
+              ],
+            },
+          };
+        }
+        return {
+          resultCode: 0,
+          payload: { sections: [{ name: 'Addresses', rows: [] }] },
+        };
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        return {
+          resultCode: 0,
+          payload: {
+            serviceRegionName: 'Lake-Lure',
+            homes: [
+              {
+                propertyId: 99001,
+                url: '/NC/Lake-Lure/212-Ridgeway-Rd-28746/home/99001',
+                streetLine: { value: '212 Ridgeway Rd' },
+                city: 'Lake Lure',
+                state: 'NC',
+                zip: '28746',
+              },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const r = await harness.callTool('redfin_resolve_addresses', {
+      addresses: [
+        {
+          street: '212 Ridgeway Rd',
+          city: 'Lake Lure',
+          state: 'NC',
+          zip: '28746',
+        },
+      ],
+    });
+    expect(r.isError).toBeFalsy();
+    const parsed = parseToolResult<{
+      results: Array<{
+        resolved: boolean;
+        home_id?: string;
+        matched_via?: string;
+      }>;
+    }>(r);
+    expect(parsed.results[0].resolved).toBe(true);
+    expect(parsed.results[0].home_id).toBe('99001');
+    expect(parsed.results[0].matched_via).toBe('search_fallback');
+  });
 });

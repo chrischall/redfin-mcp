@@ -283,6 +283,135 @@ describe('redfin_get_by_address tool', () => {
     expect(block.text).toMatch(/session not authenticated/i);
   });
 
+  // ----- Search-fallback rung (#75) -----
+
+  it('SEARCH FALLBACK (#75): autocomplete misses, gis search returns 1 hit matching street tokens → resolved + matched_via=search_fallback', async () => {
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (q === 'Lake Lure NC') {
+          return {
+            resultCode: 0,
+            payload: {
+              sections: [
+                {
+                  name: 'Places',
+                  rows: [
+                    {
+                      id: '2_555',
+                      name: 'Lake Lure',
+                      subName: 'NC, USA',
+                      url: '/city/555/NC/Lake-Lure',
+                    },
+                  ],
+                },
+              ],
+            },
+          };
+        }
+        return {
+          resultCode: 0,
+          payload: { sections: [{ name: 'Addresses', rows: [] }] },
+        };
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        return {
+          resultCode: 0,
+          payload: {
+            serviceRegionName: 'Lake-Lure',
+            homes: [
+              {
+                propertyId: 99001,
+                url: '/NC/Lake-Lure/212-Ridgeway-Rd-28746/home/99001',
+                streetLine: { value: '212 Ridgeway Rd' },
+                city: 'Lake Lure',
+                state: 'NC',
+                zip: '28746',
+              },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await harness.callTool('redfin_get_by_address', {
+      address: '212 Ridgeway Rd',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+    expect(result.isError).toBeFalsy();
+
+    const parsed = parseToolResult<{
+      resolved: boolean;
+      home_id: string;
+      url: string;
+      matched_via: string;
+    }>(result);
+    expect(parsed.resolved).toBe(true);
+    expect(parsed.home_id).toBe('99001');
+    expect(parsed.matched_via).toBe('search_fallback');
+  });
+
+  it('SEARCH FALLBACK (#75): clean autocomplete hit → matched_via=autocomplete (back-compat)', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        sections: [
+          {
+            name: 'Addresses',
+            rows: [
+              {
+                name: '158 Raven Blvd',
+                subName: 'Lake Lure, NC 28746',
+                url: '/NC/Lake-Lure/158-Raven-Blvd-28746/home/112653221',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const result = await harness.callTool('redfin_get_by_address', {
+      address: '158 Raven Blvd',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+    const parsed = parseToolResult<{
+      resolved: boolean;
+      matched_via: string;
+    }>(result);
+    expect(parsed.resolved).toBe(true);
+    expect(parsed.matched_via).toBe('autocomplete');
+  });
+
+  it('SEARCH FALLBACK (#75): region resolution fails → resolved=false with informative error context', async () => {
+    // autocomplete misses on the address AND on the city+state region
+    // query. The search-fallback rung cannot proceed, so the tool
+    // degrades to resolved=false (not throw) with attempts surfaced.
+    mockFetchStingrayJson.mockResolvedValue({
+      resultCode: 0,
+      payload: { sections: [{ name: 'Addresses', rows: [] }] },
+    });
+    const result = await harness.callTool('redfin_get_by_address', {
+      address: '999 Bogus Way',
+      city: 'Notarealcity',
+      state: 'NC',
+      zip: '99999',
+    });
+    expect(result.isError).toBeFalsy();
+    const parsed = parseToolResult<{
+      resolved: boolean;
+      attempts?: string[];
+    }>(result);
+    expect(parsed.resolved).toBe(false);
+    expect(parsed.attempts).toBeDefined();
+  });
+
   it('does NOT add matched_variant when the input as-typed matched', async () => {
     mockFetchStingrayJson.mockResolvedValueOnce({
       resultCode: 0,
