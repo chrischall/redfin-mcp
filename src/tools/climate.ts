@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { mapWithConcurrency } from '@fetchproxy/server';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import { urlToPath } from '../url.js';
-import { mapWithConcurrency } from './bulk-get.js';
 
 /**
  * Redfin's homedetails page server-renders climate risk data from

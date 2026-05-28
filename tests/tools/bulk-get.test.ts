@@ -1,9 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import type { RedfinClient } from '../../src/client.js';
-import {
-  mapWithConcurrency,
-  registerBulkGetTools,
-} from '../../src/tools/bulk-get.js';
+import { registerBulkGetTools } from '../../src/tools/bulk-get.js';
 import { createTestHarness, parseToolResult } from '../helpers.js';
 
 const mockFetchStingrayJson = vi.fn();
@@ -17,30 +14,8 @@ afterAll(async () => {
   if (harness) await harness.close();
 });
 
-describe('mapWithConcurrency', () => {
-  it('preserves input order', async () => {
-    const out = await mapWithConcurrency([1, 2, 3, 4], 2, async (n) => n * 10);
-    expect(out).toEqual([10, 20, 30, 40]);
-  });
-
-  it('caps in-flight workers at the concurrency limit', async () => {
-    let inFlight = 0;
-    let max = 0;
-    const items = Array.from({ length: 10 }, (_, i) => i);
-    await mapWithConcurrency(items, 3, async (n) => {
-      inFlight++;
-      max = Math.max(max, inFlight);
-      await new Promise((r) => setTimeout(r, 5));
-      inFlight--;
-      return n;
-    });
-    expect(max).toBeLessThanOrEqual(3);
-  });
-
-  it('handles empty input', async () => {
-    expect(await mapWithConcurrency([], 4, async () => null)).toEqual([]);
-  });
-});
+// `mapWithConcurrency` lives in `@fetchproxy/server` (0.9.x+) and is
+// unit-tested there. We only test redfin-side tool behaviors here.
 
 describe('redfin_bulk_get tool', () => {
   it('setup', async () => {
