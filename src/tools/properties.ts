@@ -14,6 +14,7 @@ import {
   collectAddressAlternates,
   hoaToMonthlyUsd,
   lastSold,
+  lotSizeAcres,
   priceDrop,
 } from '../derived.js';
 import {
@@ -253,6 +254,14 @@ export interface FormattedProperty {
   beds?: number;
   baths?: number;
   sqft?: number;
+  /** Lot size in square feet, from `publicRecordsInfo.basicInfo.lotSqFt`
+   * in belowTheFold. `null` (never `0`) for condos / missing public
+   * records. See issue #81. */
+  lot_size?: number | null;
+  /** `round(lot_size / 43560, 2)` — lot size in acres, the unit that
+   * matters for rural/mountain/land listings. `null` when `lot_size` is
+   * null/absent (not `0`). See issue #82. */
+  lot_size_acres?: number | null;
   price_per_sqft?: number;
   year_built?: number;
   price?: number;
@@ -311,6 +320,11 @@ export interface FormatOptions {
    * When supplied, the formatter null-cleans the 0/1 sentinel and emits
    * `tax_status: "not_yet_assessed"` for that case (#36). */
   taxAnnual?: number | null;
+  /** Optional lot size in square feet (from
+   * `publicRecordsInfo.basicInfo.lotSqFt` in belowTheFold). Feeds
+   * `lot_size` (#81) and the derived `lot_size_acres` (#82). Absent for
+   * condos / missing public records → both fields null. */
+  lotSqFt?: number | null;
 }
 
 export function format(
@@ -349,6 +363,11 @@ export function format(
     opts.taxAnnual !== undefined
       ? cleanTaxAnnual(opts.taxAnnual)
       : { tax_annual: null as number | null, tax_status: null as 'not_yet_assessed' | null };
+  // #81 lot_size (sq ft) + #82 derived lot_size_acres. Null-safe: a 0 or
+  // absent lotSqFt (condos / missing public records) yields null for both,
+  // never 0.
+  const lotSize =
+    typeof opts.lotSqFt === 'number' && opts.lotSqFt > 0 ? opts.lotSqFt : null;
   return {
     property_id: initial?.propertyId,
     listing_id: initial?.listingId,
@@ -365,6 +384,8 @@ export function format(
     beds: addr.beds,
     baths: addr.baths,
     sqft: unwrap(addr.sqFt),
+    lot_size: lotSize,
+    lot_size_acres: lotSizeAcres(lotSize),
     price_per_sqft: unwrap(addr.pricePerSqFt),
     year_built: unwrap(addr.yearBuilt),
     price,
@@ -402,7 +423,7 @@ export function registerPropertyTools(
     {
       title: 'Get Redfin property details',
       description:
-        "Fetch a property's full Redfin record. Provide either (a) `url` — full Redfin homedetails URL or path, which we'll resolve via the initialInfo endpoint, or (b) `property_id` + `listing_id` — skip the resolution and go straight to aboveTheFold. Returns address, beds/baths, sqft, year built, price, status, days on market, the primary photo URL, plus derived fields (price_drop_*, hoa_monthly_usd, last_sold_*, tax_annual, extracted_features). The raw marketing description is OMITTED by default — opt in with `include_description: true`. Set `include_price_history: true` to bundle the full price history (and the cross-MCP-normalized `events_normalized` view) inline; set `include_tax_history: true` for `tax_history`. Read-only; safe to call repeatedly.",
+        "Fetch a property's full Redfin record. Provide either (a) `url` — full Redfin homedetails URL or path, which we'll resolve via the initialInfo endpoint, or (b) `property_id` + `listing_id` — skip the resolution and go straight to aboveTheFold. Returns address, beds/baths, sqft, lot_size (sq ft), year built, price, status, days on market, the primary photo URL, plus derived fields (lot_size_acres, price_drop_*, hoa_monthly_usd, last_sold_*, tax_annual, extracted_features). lot_size / lot_size_acres are null (never 0) for condos and listings with no public-records lot. The raw marketing description is OMITTED by default — opt in with `include_description: true`. Set `include_price_history: true` to bundle the full price history (and the cross-MCP-normalized `events_normalized` view) inline; set `include_tax_history: true` for `tax_history`. Read-only; safe to call repeatedly.",
       annotations: {
         title: 'Get Redfin property details',
         readOnlyHint: true,
@@ -484,6 +505,7 @@ export function registerPropertyTools(
             }>;
           };
           publicRecordsInfo?: {
+            basicInfo?: { lotSqFt?: number };
             taxInfo?: { taxesDue?: number };
             allTaxInfo?: Array<{
               rollYear?: number;
@@ -509,6 +531,7 @@ export function registerPropertyTools(
         includeDescription: include_description === true,
         events: btf?.propertyHistoryInfo?.events,
         taxAnnual: btf?.publicRecordsInfo?.taxInfo?.taxesDue,
+        lotSqFt: btf?.publicRecordsInfo?.basicInfo?.lotSqFt,
       });
 
       // #49 bundling. BTF is already fetched above for the cheap

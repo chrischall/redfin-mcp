@@ -61,6 +61,24 @@ describe('buildSummary', () => {
     expect(summary.find((r) => r.field === 'last_sold_date')?.values).toEqual(['2024-01-15']);
     expect(summary.find((r) => r.field === 'tax_annual')?.values).toEqual([5400]);
   });
+
+  it('includes lot_size + lot_size_acres in the summary (#81/#82)', () => {
+    const rows = [
+      {
+        property_id: 1,
+        url: 'u',
+        property: { property_id: 1, url: 'u', lot_size: 45_738, lot_size_acres: 1.05 },
+      },
+      {
+        property_id: 2,
+        url: 'v',
+        property: { property_id: 2, url: 'v', lot_size: null, lot_size_acres: null },
+      },
+    ];
+    const summary = buildSummary(rows as never);
+    expect(summary.find((r) => r.field === 'lot_size')?.values).toEqual([45_738, null]);
+    expect(summary.find((r) => r.field === 'lot_size_acres')?.values).toEqual([1.05, null]);
+  });
 });
 
 describe('redfin_compare_properties tool', () => {

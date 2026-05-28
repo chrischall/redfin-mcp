@@ -71,7 +71,10 @@ async function fetchOne(
               price?: number;
             }>;
           };
-          publicRecordsInfo?: { taxInfo?: { taxesDue?: number } };
+          publicRecordsInfo?: {
+            basicInfo?: { lotSqFt?: number };
+            taxInfo?: { taxesDue?: number };
+          };
         }>(`/stingray/api/home/details/belowTheFold?${params.toString()}`)
       )
         .then((e) => (e ? e.payload ?? null : null))
@@ -93,6 +96,7 @@ async function fetchOne(
         includeDescription,
         events: btf?.propertyHistoryInfo?.events,
         taxAnnual: btf?.publicRecordsInfo?.taxInfo?.taxesDue,
+        lotSqFt: btf?.publicRecordsInfo?.basicInfo?.lotSqFt,
       }),
     };
   } catch (e) {

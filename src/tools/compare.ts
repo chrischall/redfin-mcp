@@ -48,6 +48,8 @@ export function buildSummary(rows: ComparePerProperty[]): CompareSummaryRow[] {
     pick('beds', (p) => p.beds),
     pick('baths', (p) => p.baths),
     pick('sqft', (p) => p.sqft),
+    pick('lot_size', (p) => p.lot_size),
+    pick('lot_size_acres', (p) => p.lot_size_acres),
     pick('year_built', (p) => p.year_built),
     pick('status', (p) => p.status),
     pick('cumulative_days_on_market', (p) => p.cumulative_days_on_market),
@@ -140,7 +142,10 @@ export function registerCompareTools(
                         price?: number;
                       }>;
                     };
-                    publicRecordsInfo?: { taxInfo?: { taxesDue?: number } };
+                    publicRecordsInfo?: {
+                      basicInfo?: { lotSqFt?: number };
+                      taxInfo?: { taxesDue?: number };
+                    };
                   }>(
                     `/stingray/api/home/details/belowTheFold?${params.toString()}`
                   )
@@ -163,6 +168,7 @@ export function registerCompareTools(
                   includeDescription: include_description === true,
                   events: btf?.propertyHistoryInfo?.events,
                   taxAnnual: btf?.publicRecordsInfo?.taxInfo?.taxesDue,
+                  lotSqFt: btf?.publicRecordsInfo?.basicInfo?.lotSqFt,
                 }),
               };
             } catch (e) {
