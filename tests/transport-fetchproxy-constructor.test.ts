@@ -31,13 +31,16 @@ beforeEach(() => {
 });
 
 describe('FetchproxyTransport — constructor options', () => {
-  it('passes keepAliveIntervalMs: 25_000 to the FetchproxyServer constructor (fetchproxy#71, closes #80)', async () => {
+  it('does NOT pass keepAliveIntervalMs — relies on the 0.10.0 server-side 25s default (fetchproxy#72)', async () => {
     const { FetchproxyTransport } = await import(
       '../src/transport-fetchproxy.js'
     );
     new FetchproxyTransport({ version: '0.0.0-test' });
     expect(constructorCalls.length).toBe(1);
-    expect(constructorCalls[0]!.keepAliveIntervalMs).toBe(25_000);
+    // 0.10.0 promoted keepAliveIntervalMs to a 25_000ms default — the
+    // whole consumer cohort had been opting into exactly that value, so
+    // we stopped forwarding it. Behavior is identical (SW kept resident).
+    expect(constructorCalls[0]!.keepAliveIntervalMs).toBeUndefined();
   });
 
   it('omits fetchTimeoutMs when not explicitly provided (relies on server-side 30s default)', async () => {
