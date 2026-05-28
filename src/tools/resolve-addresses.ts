@@ -1,9 +1,12 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import {
+  BRIDGE_CONCURRENCY,
+  mapWithConcurrency,
+} from '@fetchproxy/server';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import { resolveAddressWithFallbacks } from '../resolve.js';
-import { mapWithConcurrency } from './bulk-get.js';
 
 /**
  * `redfin_resolve_addresses`: batch address-resolution for the
@@ -18,7 +21,6 @@ import { mapWithConcurrency } from './bulk-get.js';
  */
 
 const MAX_ADDRESSES = 100;
-const CONCURRENCY = 6;
 
 const AddressInput = z.union([
   z.string(),
@@ -148,7 +150,7 @@ export function registerResolveAddressesTools(
     async ({ addresses }) => {
       const results = await mapWithConcurrency(
         addresses as AddressInput[],
-        CONCURRENCY,
+        BRIDGE_CONCURRENCY,
         (a) => resolveOne(client, a)
       );
       const ok = results.filter((r) => r.resolved).length;

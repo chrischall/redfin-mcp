@@ -1,9 +1,10 @@
 // Adapter that lets @fetchproxy/server's FetchproxyServer satisfy
 // redfin-mcp's RedfinTransport interface.
 //
-// As of @fetchproxy/server 0.8.0, lazy-revive on Chrome MV3
-// service-worker eviction (default 2000ms) and per-request timeouts
-// (default 30000ms) are server defaults. The convenience `request()`
+// As of @fetchproxy/server 0.8.0 (carried forward in 0.9.0), lazy-revive
+// on Chrome MV3 service-worker eviction (default 2000ms) and per-request
+// timeouts (default 30000ms) are server defaults — we no longer pass
+// them explicitly unless a caller overrides. The convenience `request()`
 // method throws typed `FetchproxyBridgeDownError` /
 // `FetchproxyTimeoutError` on failure (both subclasses of
 // `FetchproxyProtocolError`).
@@ -48,8 +49,6 @@ export {
 export type { BridgeError };
 
 const DEFAULT_PORT = 37_149;
-// Server default; mirrored here so `status().fetchTimeoutMs` stays accurate.
-const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
 
 const DEBUG = process.env.REDFIN_DEBUG === '1';
 
@@ -63,27 +62,31 @@ export interface FetchproxyTransportOptions {
   server?: string;
   /** MCP server version. Should match package.json + the banner in index.ts. */
   version: string;
-  /** Per-request timeout in ms. Default 30s. */
+  /** Per-request timeout in ms. Omit to use the server's 30s default. */
   fetchTimeoutMs?: number;
 }
 
 export class FetchproxyTransport implements RedfinTransport {
   private readonly inner: FetchproxyServer;
-  private readonly fetchTimeoutMs: number;
   private readonly port: number;
   private readonly serverVersion: string;
 
   constructor(opts: FetchproxyTransportOptions) {
     this.port = opts.port ?? DEFAULT_PORT;
     this.serverVersion = opts.version;
-    this.fetchTimeoutMs = opts.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
     const options: FetchproxyServerOpts = {
       port: this.port,
       serverName: opts.server ?? 'redfin-mcp',
       version: opts.version,
       // Subdomains of redfin.com (www, photos, etc.) match automatically.
       domains: ['redfin.com'],
-      fetchTimeoutMs: this.fetchTimeoutMs,
+      // 0.9.0 defaults `fetchTimeoutMs` to 30_000 — only forward when a
+      // caller explicitly overrides.
+      ...(opts.fetchTimeoutMs !== undefined
+        ? { fetchTimeoutMs: opts.fetchTimeoutMs }
+        : {}),
+      // fetchproxy#71 — keep SW resident across human-paced session gaps
+      keepAliveIntervalMs: 25_000,
     };
     this.inner = new FetchproxyServer(options);
   }

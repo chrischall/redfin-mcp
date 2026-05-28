@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import {
+  BRIDGE_CONCURRENCY,
+  mapWithConcurrency,
+} from '@fetchproxy/server';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import {
@@ -20,13 +24,14 @@ import {
  * errors are captured per-row so a single bad ID doesn't fail the
  * batch. ATF + BTF are fetched in parallel per target (same pipeline
  * as get_property), and targets themselves are fanned out concurrently
- * with a small concurrency cap to avoid hammering Redfin.
+ * via `mapWithConcurrency` from `@fetchproxy/server` (cap pinned at
+ * {@link BRIDGE_CONCURRENCY}=6 — the round-3 cohort comparison value)
+ * to avoid hammering Redfin.
  *
  * Hard cap: 200 targets per call. See issue #38.
  */
 
 const MAX_TARGETS = 200;
-const CONCURRENCY = 6;
 
 interface BulkTarget {
   url?: string;
@@ -99,32 +104,6 @@ async function fetchOne(
   }
 }
 
-/**
- * Run `fn` over `items` with at most `concurrency` in flight at a time.
- * Preserves input order in the returned array.
- */
-export async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T, index: number) => Promise<R>
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let cursor = 0;
-  const workers: Promise<void>[] = [];
-  const next = async (): Promise<void> => {
-    while (true) {
-      const i = cursor++;
-      if (i >= items.length) return;
-      results[i] = await fn(items[i], i);
-    }
-  };
-  for (let i = 0; i < Math.min(concurrency, items.length); i++) {
-    workers.push(next());
-  }
-  await Promise.all(workers);
-  return results;
-}
-
 export function registerBulkGetTools(
   server: McpServer,
   client: RedfinClient
@@ -169,7 +148,7 @@ export function registerBulkGetTools(
     async ({ targets, include_description }) => {
       const results = await mapWithConcurrency(
         targets as BulkTarget[],
-        CONCURRENCY,
+        BRIDGE_CONCURRENCY,
         (t) => fetchOne(client, t, include_description === true)
       );
       const ok = results.filter((r) => !r.error).length;
