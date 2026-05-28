@@ -108,6 +108,15 @@ function streetTokens(street: string | undefined): Set<string> {
   return out;
 }
 
+/** Cap on homes the search-fallback rung pulls from the gis API
+ * before street-token scoring. Sized to cover rural and small
+ * markets (Lake-Lure-class) where the relevant home may be deep in
+ * the unsorted result list, while still bounded to keep the round
+ * cheap. Very large metros may exhaust this cap without surfacing
+ * the target — the natural follow-up is a tighter tier with
+ * price/bed filters tracked by #74 (price-band fallback). */
+const SEARCH_FALLBACK_HOME_LIMIT = 350;
+
 /** Generic street-suffix tokens shared by thousands of unrelated
  * streets — without filtering these out, "1 Different Rd" would
  * fuzzy-match "212 Ridgeway Rd" on the shared "rd" token alone.
@@ -213,11 +222,21 @@ function homeToAddress(home: RawHome): RedfinAddress | null {
   const parsed = parseAddressUrl(url);
   const streetLine = streetLineOf(home);
   const fullUrl = url.startsWith('http') ? url : `https://www.redfin.com${url}`;
+  // `RedfinAddress.path` is contractually path-only (no origin).
+  // gis `home.url` is usually already path-only, but defensively
+  // normalize when it comes back absolute so we don't violate the
+  // contract — mirrors the `fullUrl` shape-check above.
+  const path = url.startsWith('http')
+    ? (() => {
+        const u = new URL(url);
+        return u.pathname + u.search;
+      })()
+    : url;
   if (parsed) {
     return {
       home_id: parsed.home_id,
       url: fullUrl,
-      path: url,
+      path,
       street_address: streetLine || parsed.street,
       city: home.city ?? parsed.city,
       state: home.state ?? parsed.state,
@@ -231,7 +250,7 @@ function homeToAddress(home: RawHome): RedfinAddress | null {
   return {
     home_id: idMatch[1],
     url: fullUrl,
-    path: url,
+    path,
     street_address: streetLine,
     city: home.city ?? '',
     state: home.state ?? '',
@@ -262,7 +281,10 @@ async function searchFallbackResolve(
   if (!regionQuery) return null;
   const region: RedfinRegion | null = await resolveRegion(client, regionQuery);
   if (!region) return null;
-  const path = buildGisPath(region, { location: regionQuery, limit: 350 });
+  const path = buildGisPath(region, {
+    location: regionQuery,
+    limit: SEARCH_FALLBACK_HOME_LIMIT,
+  });
   const env = await client.fetchStingrayJson<{
     homes?: RawHome[];
     serviceRegionName?: string;
@@ -273,15 +295,27 @@ async function searchFallbackResolve(
   // unrelated serviceRegionName, and unrelated-homes cases. Pass the
   // ZIP when available so the ZIP→state path fires even though the
   // region we resolved went through a city/state query.
+  //
+  // The guard throws with a `redfin_search_properties:` prefix
+  // (it's the shared search guard). Rewrap so callers from
+  // `redfin_get_by_address` / `redfin_resolve_addresses` see an
+  // error attributed to WHERE it fired, not the unrelated search
+  // tool. Body is preserved verbatim.
   const guardInput = input.zip ?? regionQuery;
-  assertRegionMatches(
-    region,
-    {
-      serviceRegionName: env.payload?.serviceRegionName,
-      homes: raw.map((h) => ({ city: h.city, state: h.state })),
-    },
-    guardInput
-  );
+  try {
+    assertRegionMatches(
+      region,
+      {
+        serviceRegionName: env.payload?.serviceRegionName,
+        homes: raw.map((h) => ({ city: h.city, state: h.state })),
+      },
+      guardInput
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const stripped = msg.replace(/^redfin_search_properties:\s*/, '');
+    throw new Error(`address resolution (search-fallback rung): ${stripped}`);
+  }
   if (raw.length === 0) return null;
   let best: { home: RawHome; score: number } | null = null;
   for (const home of raw) {
