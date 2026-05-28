@@ -84,6 +84,8 @@ export class FetchproxyTransport implements RedfinTransport {
       // Subdomains of redfin.com (www, photos, etc.) match automatically.
       domains: ['redfin.com'],
       fetchTimeoutMs: this.fetchTimeoutMs,
+      // fetchproxy#71 — keep SW resident across human-paced session gaps
+      keepAliveIntervalMs: 25_000,
     };
     this.inner = new FetchproxyServer(options);
   }
