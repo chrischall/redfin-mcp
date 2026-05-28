@@ -2,8 +2,8 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
-import { resolveAddress, type RedfinAddress } from '../autocomplete.js';
-import { expandAddressVariants } from '../suffix.js';
+import { type RedfinAddress } from '../autocomplete.js';
+import { resolveAddressWithFallbacks } from '../resolve.js';
 
 /**
  * `redfin_get_by_address`: resolve a free-text address to a Redfin
@@ -51,33 +51,19 @@ export function registerGetByAddressTools(
       },
     },
     async (input) => {
-      // Build the canonical query, then expand suffix variants on the
-      // STREET PORTION ONLY. The first variant is the input as-typed;
-      // alternates swap the street-suffix between abbreviated and
-      // full forms. We try them in order and stop on the first hit.
-      // (#43 — `268 Mallard Rd` didn't resolve, `268 Mallard Road` did.)
-      const cityStateZip = [input.city, input.state, input.zip]
-        .filter((s): s is string => Boolean(s && s.trim()))
-        .join(' ');
-      const addressVariants = expandAddressVariants(input.address);
-      const candidates = addressVariants.map((a) =>
-        cityStateZip ? `${a} ${cityStateZip}` : a
-      );
-      // Top-level query used for response payload + error case logging.
-      const query = candidates[0] ?? input.address;
-      const attempts: string[] = [];
-      let match: RedfinAddress | null = null;
-      let matchedVariant: string | undefined;
-      for (const variant of candidates) {
-        attempts.push(variant);
-        // `resolveAddress` returns null for "no match" (drives fallthrough)
-        // and throws for real errors (auth/WAF/network) — let those propagate.
-        match = await resolveAddress(client, variant);
-        if (match) {
-          matchedVariant = variant;
-          break;
-        }
-      }
+      // Delegate the rung-walking (input-as-typed + suffix-expansion
+      // variants) to the shared `resolveAddressWithFallbacks` helper.
+      // Both `redfin_get_by_address` and `redfin_resolve_addresses`
+      // call this same helper so the fallback strategy stays in sync.
+      // See issue #71 for the parity audit.
+      const { match, attempts, matchedVariant } =
+        await resolveAddressWithFallbacks(client, {
+          street: input.address,
+          city: input.city,
+          state: input.state,
+          zip: input.zip,
+        });
+      const query = attempts[0] ?? input.address;
       if (!match) {
         return textResult({
           resolved: false,
@@ -85,14 +71,15 @@ export function registerGetByAddressTools(
           attempts,
         });
       }
+      const matchValue: RedfinAddress = match;
       return textResult({
         resolved: true,
-        url: match.url,
-        home_id: match.home_id,
-        street_address: match.street_address,
-        city: match.city,
-        state: match.state,
-        zip: match.zip,
+        url: matchValue.url,
+        home_id: matchValue.home_id,
+        street_address: matchValue.street_address,
+        city: matchValue.city,
+        state: matchValue.state,
+        zip: matchValue.zip,
         // When the input as-typed matched, omit the variant signal —
         // the common case stays terse. When a suffix-swap variant
         // matched, surface it so the caller can record which form

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
-import { resolveAddress } from '../autocomplete.js';
+import { resolveAddressWithFallbacks } from '../resolve.js';
 import { mapWithConcurrency } from './bulk-get.js';
 
 /**
@@ -45,23 +45,42 @@ interface ResolvedAddressRow {
    * caller passed a structured input and needs to see what we
    * actually sent to autocomplete. */
   query: string;
+  /** Variant that actually matched (only populated when a fallback
+   * variant — e.g. suffix-expanded `Rd` → `Road` — caught a row the
+   * as-typed query missed). Mirrors the field on `redfin_get_by_address`
+   * so bulk callers can see WHICH form Redfin recognized. */
+  matched_variant?: string;
   error?: string;
 }
 
-function inputToQuery(input: AddressInput): string {
-  if (typeof input === 'string') return input;
-  return [input.street, input.city, input.state, input.zip]
-    .filter((s): s is string => Boolean(s && s.trim()))
-    .join(' ');
+/** Normalize either input shape to the shared `AddressParts` form. */
+function inputToParts(input: AddressInput): {
+  street: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+} {
+  if (typeof input === 'string') return { street: input };
+  return {
+    street: input.street,
+    city: input.city,
+    state: input.state,
+    zip: input.zip,
+  };
 }
 
 async function resolveOne(
   client: RedfinClient,
   input: AddressInput
 ): Promise<ResolvedAddressRow> {
-  const query = inputToQuery(input);
+  const parts = inputToParts(input);
   try {
-    const match = await resolveAddress(client, query);
+    // Shared with `redfin_get_by_address`. Both tools run the same
+    // fallback rungs (input-as-typed + suffix expansion) so bulk
+    // callers see the same hit rate as the single tool. See #71.
+    const { match, attempts, matchedVariant } =
+      await resolveAddressWithFallbacks(client, parts);
+    const query = attempts[0] ?? parts.street;
     if (!match) return { input, query, resolved: false };
     return {
       input,
@@ -73,11 +92,22 @@ async function resolveOne(
       city: match.city,
       state: match.state,
       zip: match.zip,
+      // Same convention as the single tool: only surface the variant
+      // when it's something OTHER than the as-typed query.
+      ...(matchedVariant && matchedVariant !== query
+        ? { matched_variant: matchedVariant }
+        : {}),
     };
   } catch (e) {
+    const fallbackQuery =
+      typeof input === 'string'
+        ? input
+        : [input.street, input.city, input.state, input.zip]
+            .filter((s): s is string => Boolean(s && s.trim()))
+            .join(' ');
     return {
       input,
-      query,
+      query: fallbackQuery,
       resolved: false,
       error: (e as Error).message,
     };
