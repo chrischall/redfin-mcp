@@ -2,7 +2,6 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
-import { type RedfinAddress } from '../autocomplete.js';
 import { resolveAddressWithFallbacks } from '../resolve.js';
 
 /**
@@ -71,15 +70,14 @@ export function registerGetByAddressTools(
           attempts,
         });
       }
-      const matchValue: RedfinAddress = match;
       return textResult({
         resolved: true,
-        url: matchValue.url,
-        home_id: matchValue.home_id,
-        street_address: matchValue.street_address,
-        city: matchValue.city,
-        state: matchValue.state,
-        zip: matchValue.zip,
+        url: match.url,
+        home_id: match.home_id,
+        street_address: match.street_address,
+        city: match.city,
+        state: match.state,
+        zip: match.zip,
         // When the input as-typed matched, omit the variant signal —
         // the common case stays terse. When a suffix-swap variant
         // matched, surface it so the caller can record which form
