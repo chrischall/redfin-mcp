@@ -3,10 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import {
-  buildCanonicalUrl,
-  format,
-  resolveIds,
-  type AboveTheFoldPayload,
+  fetchAndFormatProperty,
   type FormattedProperty,
 } from './properties.js';
 
@@ -120,56 +117,18 @@ export function registerCompareTools(
         (targets as CompareTarget[]).map(
           async (t): Promise<ComparePerProperty> => {
             try {
-              const ids = await resolveIds(client, t);
-              const params = new URLSearchParams({
-                propertyId: String(ids.propertyId),
-                accessLevel: '1',
-                listingId: String(ids.listingId),
-              });
-              // ATF + BTF in parallel: same pattern as redfin_get_property
-              // so the derived fields (last_sold_*, tax_annual cleanup)
-              // are available without a follow-up fetch.
-              const [atfEnv, btf] = await Promise.all([
-                client.fetchStingrayJson<AboveTheFoldPayload>(
-                  `/stingray/api/home/details/aboveTheFold?${params.toString()}`
-                ),
-                Promise.resolve(
-                  client.fetchStingrayJson<{
-                    propertyHistoryInfo?: {
-                      events?: Array<{
-                        eventDescription?: string;
-                        eventDate?: number;
-                        price?: number;
-                      }>;
-                    };
-                    publicRecordsInfo?: {
-                      basicInfo?: { lotSqFt?: number };
-                      taxInfo?: { taxesDue?: number };
-                    };
-                  }>(
-                    `/stingray/api/home/details/belowTheFold?${params.toString()}`
-                  )
-                )
-                  .then((e) => (e ? e.payload ?? null : null))
-                  .catch(() => null),
-              ]);
-              const atf = atfEnv.payload ?? null;
-              const initial = ids.initial ?? {
-                propertyId: ids.propertyId,
-                listingId: ids.listingId,
-              };
-              const canonicalUrl = t.url
-                ? ids.canonicalUrl
-                : (buildCanonicalUrl(atf?.addressSectionInfo, ids.propertyId) ?? ids.canonicalUrl);
+              // Shared resolveIds → ATF/BTF → format pipeline (same one
+              // redfin_get_property + redfin_bulk_get use), so the derived
+              // fields (last_sold_*, tax_annual cleanup) are available
+              // without a follow-up fetch.
+              const { ids, canonicalUrl, property } =
+                await fetchAndFormatProperty(client, t, {
+                  includeDescription: include_description === true,
+                });
               return {
                 property_id: ids.propertyId,
                 url: canonicalUrl,
-                property: format(initial, atf, canonicalUrl, {
-                  includeDescription: include_description === true,
-                  events: btf?.propertyHistoryInfo?.events,
-                  taxAnnual: btf?.publicRecordsInfo?.taxInfo?.taxesDue,
-                  lotSqFt: btf?.publicRecordsInfo?.basicInfo?.lotSqFt,
-                }),
+                property,
               };
             } catch (e) {
               return {

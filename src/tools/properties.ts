@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { textResult, unwrapValue as unwrap } from '../mcp.js';
 import { urlToPath } from '../url.js';
 import {
   extractFeatures,
@@ -234,14 +234,6 @@ export interface AboveTheFoldPayload {
   mainHouseInfo?: MainHouseInfo;
 }
 
-function unwrap<T>(x: T | { value?: T } | undefined): T | undefined {
-  if (x === undefined || x === null) return undefined;
-  if (typeof x === 'object' && 'value' in (x as object)) {
-    return (x as { value?: T }).value;
-  }
-  return x as T;
-}
-
 export interface FormattedProperty {
   property_id?: number;
   listing_id?: number;
@@ -424,6 +416,120 @@ export function format(
   };
 }
 
+/**
+ * The belowTheFold payload slice the property tools consume. Carries the
+ * price-history events (for `last_sold_*` + the opt-in `price_history` /
+ * `events_normalized` views) and the public-records basics (lot size,
+ * current-year + historical tax). A superset of what compare / bulk-get
+ * read — they ignore the richer fields.
+ */
+export interface BelowTheFoldPayload {
+  propertyHistoryInfo?: {
+    events?: Array<{
+      eventDescription?: string;
+      eventDate?: number;
+      price?: number;
+      daysOnMarket?: number;
+      source?: string;
+      sourceId?: string;
+    }>;
+  };
+  publicRecordsInfo?: {
+    basicInfo?: { lotSqFt?: number };
+    taxInfo?: { taxesDue?: number };
+    allTaxInfo?: Array<{
+      rollYear?: number;
+      taxesDue?: number;
+      taxableLandValue?: number;
+      taxableImprovementValue?: number;
+    }>;
+  };
+}
+
+/** Target accepted by {@link fetchAndFormatProperty} — a URL, a bare
+ * property_id, or a property_id+listing_id pair. */
+export interface PropertyTarget {
+  url?: string;
+  property_id?: number;
+  listing_id?: number;
+}
+
+export interface FetchAndFormatResult<A extends AboveTheFoldPayload> {
+  ids: ResolvedIds;
+  atf: A | null;
+  /** null when `withBelowTheFold: false` (photos) or the BTF fetch failed. */
+  btf: BelowTheFoldPayload | null;
+  canonicalUrl: string;
+  /** Formatted record. Undefined only when `withBelowTheFold: false`
+   * (photos doesn't format a property). */
+  property?: FormattedProperty;
+}
+
+/**
+ * Resolve a target → fetch aboveTheFold (+ belowTheFold) → format, the
+ * shared pipeline behind `redfin_get_property`, `redfin_compare_properties`,
+ * `redfin_bulk_get`, and (ATF-only) `redfin_get_property_photos`. Folds
+ * the resolveIds → parallel ATF/BTF fetch → canonicalUrl-upgrade → format
+ * block that was copy-pasted across all four tools.
+ *
+ * Generic over the aboveTheFold shape so photos can pull its richer
+ * `mediaBrowserInfo.photos[]` slice through the same path.
+ *
+ * - `withBelowTheFold: false` skips the BTF fetch AND the format step
+ *   (photos needs neither) — `btf` is null and `property` is undefined.
+ * - BTF fetch failures degrade to `btf: null` (the derived fields just
+ *   go null), matching the prior per-tool `.catch(() => null)` behavior.
+ */
+export async function fetchAndFormatProperty<
+  A extends AboveTheFoldPayload = AboveTheFoldPayload,
+>(
+  client: RedfinClient,
+  target: PropertyTarget,
+  opts: { includeDescription?: boolean; withBelowTheFold?: boolean } = {}
+): Promise<FetchAndFormatResult<A>> {
+  const withBtf = opts.withBelowTheFold !== false;
+  const ids = await resolveIds(client, target);
+  const params = new URLSearchParams({
+    propertyId: String(ids.propertyId),
+    accessLevel: '1',
+    listingId: String(ids.listingId),
+  });
+  const atfPath = `/stingray/api/home/details/aboveTheFold?${params.toString()}`;
+  const [atfEnv, btf] = await Promise.all([
+    client.fetchStingrayJson<A>(atfPath),
+    withBtf
+      ? client
+          .fetchStingrayJson<BelowTheFoldPayload>(
+            `/stingray/api/home/details/belowTheFold?${params.toString()}`
+          )
+          .then((e) => (e ? e.payload ?? null : null))
+          .catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  const atf = atfEnv.payload ?? null;
+  // resolveIds emits the short /home/<id> form when the caller passed IDs
+  // without a URL; upgrade to the canonical full slug once ATF gives us
+  // the address parts.
+  const canonicalUrl = target.url
+    ? ids.canonicalUrl
+    : buildCanonicalUrl(atf?.addressSectionInfo, ids.propertyId) ??
+      ids.canonicalUrl;
+  const result: FetchAndFormatResult<A> = { ids, atf, btf, canonicalUrl };
+  if (withBtf) {
+    const initial = ids.initial ?? {
+      propertyId: ids.propertyId,
+      listingId: ids.listingId,
+    };
+    result.property = format(initial, atf, canonicalUrl, {
+      includeDescription: opts.includeDescription === true,
+      events: btf?.propertyHistoryInfo?.events,
+      taxAnnual: btf?.publicRecordsInfo?.taxInfo?.taxesDue,
+      lotSqFt: btf?.publicRecordsInfo?.basicInfo?.lotSqFt,
+    });
+  }
+  return result;
+}
+
 export function registerPropertyTools(
   server: McpServer,
   client: RedfinClient
@@ -484,65 +590,15 @@ export function registerPropertyTools(
       },
     },
     async ({ url, property_id, listing_id, include_description, include_price_history, include_tax_history }) => {
-      // Route through resolveIds so URL-shape validation (Bug 4 fix)
-      // and the InvalidPropertyUrlError path fire for this entry point
-      // too — not just for compare/history/climate/rentals.
-      const ids = await resolveIds(client, { url, property_id, listing_id });
-      const { propertyId, listingId } = ids;
-      let initial: InitialInfoPayload | null = ids.initial;
-
-      const atfParams = new URLSearchParams({
-        propertyId: String(propertyId),
-        accessLevel: '1',
-        listingId: String(listingId),
-      });
-      // Fetch ATF + BTF in parallel so we can surface the cheap derived
-      // fields (#50 last_sold_*, #36 tax_annual placeholder cleanup)
-      // without forcing the caller to make a second tool call.
-      const [atfEnv, btf] = await Promise.all([
-        client.fetchStingrayJson<AboveTheFoldPayload>(
-          `/stingray/api/home/details/aboveTheFold?${atfParams.toString()}`
-        ),
-        client.fetchStingrayJson<{
-          propertyHistoryInfo?: {
-            events?: Array<{
-              eventDescription?: string;
-              eventDate?: number;
-              price?: number;
-              daysOnMarket?: number;
-              source?: string;
-              sourceId?: string;
-            }>;
-          };
-          publicRecordsInfo?: {
-            basicInfo?: { lotSqFt?: number };
-            taxInfo?: { taxesDue?: number };
-            allTaxInfo?: Array<{
-              rollYear?: number;
-              taxesDue?: number;
-              taxableLandValue?: number;
-              taxableImprovementValue?: number;
-            }>;
-          };
-        }>(`/stingray/api/home/details/belowTheFold?${atfParams.toString()}`)
-          .then((e) => (e ? e.payload ?? null : null))
-          .catch(() => null),
-      ]);
-      const atf = atfEnv.payload ?? null;
-
-      // resolveIds emits the short /home/<id> form when the caller passed
-      // IDs without a URL; upgrade to the canonical full path once ATF
-      // gives us the address parts.
-      const canonicalUrl =
-        url ? ids.canonicalUrl : (buildCanonicalUrl(atf?.addressSectionInfo, propertyId) ?? ids.canonicalUrl);
-
-      if (!initial) initial = { propertyId, listingId };
-      const formatted = format(initial, atf, canonicalUrl, {
-        includeDescription: include_description === true,
-        events: btf?.propertyHistoryInfo?.events,
-        taxAnnual: btf?.publicRecordsInfo?.taxInfo?.taxesDue,
-        lotSqFt: btf?.publicRecordsInfo?.basicInfo?.lotSqFt,
-      });
+      // Shared resolveIds → parallel ATF/BTF fetch → format pipeline.
+      // BTF gives us the cheap derived fields (#50 last_sold_*, #36
+      // tax_annual cleanup) without a second tool call. resolveIds also
+      // enforces the URL-shape validation (Bug 4) for this entry point.
+      const { btf, property } = await fetchAndFormatProperty(
+        client,
+        { url, property_id, listing_id },
+        { includeDescription: include_description === true }
+      );
 
       // #49 bundling. BTF is already fetched above for the cheap
       // derived fields — when the caller opts in, surface the full
@@ -560,7 +616,7 @@ export function registerPropertyTools(
       }
 
       return textResult({
-        ...formatted,
+        ...property,
         ...(price_history ? { price_history } : {}),
         ...(events_normalized ? { events_normalized } : {}),
         ...(tax_history ? { tax_history } : {}),

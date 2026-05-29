@@ -19,42 +19,6 @@ function stubTransport(
     start: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
     fetch: vi.fn().mockImplementation(handler),
-    // 0.10.0+: `fetchJson` now delegates to `transport.requestJson`,
-    // which (in the real FetchproxyTransport) hands off to the server's
-    // `requestJson`. Mirror that serialize-body / JSON-header-default /
-    // 204-as-null / JSON.parse contract here over the same `handler` so
-    // the existing fetch-shaped stubs keep working.
-    requestJson: vi
-      .fn()
-      .mockImplementation(
-        async (
-          method: 'GET' | 'POST' | 'PUT' | 'DELETE',
-          path: string,
-          opts: { headers?: Record<string, string>; body?: unknown } = {}
-        ) => {
-          const init: FetchInit = {
-            path,
-            method,
-            headers: {
-              Accept: 'application/json',
-              ...(method !== 'GET' && opts.body !== undefined
-                ? { 'Content-Type': 'application/json' }
-                : {}),
-              ...(opts.headers ?? {}),
-            },
-            body:
-              method === 'GET' || opts.body === undefined
-                ? undefined
-                : JSON.stringify(opts.body),
-          };
-          const result = await handler(init);
-          const data =
-            result.status === 204 || result.body === ''
-              ? null
-              : JSON.parse(result.body);
-          return { data, result };
-        }
-      ),
     runProbe: vi.fn(),
     status: vi.fn(),
   } as unknown as RedfinTransport;
@@ -170,36 +134,6 @@ describe('RedfinClient', () => {
     await expect(client.fetchStingrayJson('/stingray/api/x')).rejects.toThrow(
       /was not JSON/
     );
-  });
-
-  it('fetchJson POSTs JSON and parses the reply', async () => {
-    const client = new RedfinClient({
-      transport: stubTransport(async (init) => {
-        expect(init.method).toBe('POST');
-        const body = JSON.parse(String(init.body));
-        return {
-          status: 200,
-          body: JSON.stringify({ echoed: body }),
-          url: 'https://www.redfin.com/x',
-        };
-      }),
-    });
-    const r = await client.fetchJson<{ echoed: { n: number } }>('/x', {
-      method: 'POST',
-      body: { n: 42 },
-    });
-    expect(r.echoed.n).toBe(42);
-  });
-
-  it('fetchJson returns null for 204', async () => {
-    const client = new RedfinClient({
-      transport: stubTransport(async () => ({
-        status: 204,
-        body: '',
-        url: 'https://www.redfin.com/x',
-      })),
-    });
-    expect(await client.fetchJson('/x', { method: 'POST', body: {} })).toBeNull();
   });
 
   describe('resolveCanonicalUrl', () => {

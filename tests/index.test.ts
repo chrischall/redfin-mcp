@@ -12,7 +12,6 @@ import { createTestHarness } from './helpers.js';
 
 const mockClient = {
   fetchHtml: vi.fn(),
-  fetchJson: vi.fn(),
   fetchStingrayJson: vi.fn(),
 } as unknown as RedfinClient;
 

@@ -101,7 +101,7 @@ function extractBalancedJson(text: string, idx: number): string | null {
  */
 export function extractClimateBlock(
   html: string,
-  key: 'floodData' | 'fireData' | 'heatData' | 'windData'
+  key: 'floodData' | 'fireData' | 'heatData'
 ): Record<string, unknown> | null {
   // Look for either escaped (`\"floodData\":`) or plain (`"floodData":`) form.
   const patterns = [`\\"${key}\\":`, `"${key}":`];

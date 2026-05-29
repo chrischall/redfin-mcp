@@ -3,8 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import {
-  buildCanonicalUrl,
-  resolveIds,
+  fetchAndFormatProperty,
   type AboveTheFoldPayload,
 } from './properties.js';
 
@@ -173,23 +172,19 @@ export function registerPhotosTools(
       },
     },
     async ({ url, property_id, listing_id }) => {
-      const ids = await resolveIds(client, { url, property_id, listing_id });
-      const atfParams = new URLSearchParams({
-        propertyId: String(ids.propertyId),
-        accessLevel: '1',
-        listingId: String(ids.listingId),
-      });
-      const env = await client.fetchStingrayJson<AboveTheFoldWithMedia>(
-        `/stingray/api/home/details/aboveTheFold?${atfParams.toString()}`
-      );
-      const atf = env.payload ?? null;
+      // Shared resolveIds → ATF fetch → canonicalUrl pipeline. Photos
+      // needs only the richer mediaBrowserInfo slice, so skip the BTF
+      // fetch + format step (`withBelowTheFold: false`).
+      const { ids, atf, canonicalUrl } =
+        await fetchAndFormatProperty<AboveTheFoldWithMedia>(
+          client,
+          { url, property_id, listing_id },
+          { withBelowTheFold: false }
+        );
       const rawPhotos = atf?.mediaBrowserInfo?.photos ?? [];
       const photos = rawPhotos
         .map(formatPhoto)
         .filter((p): p is FormattedPhoto => p !== null);
-      const canonicalUrl = url
-        ? ids.canonicalUrl
-        : (buildCanonicalUrl(atf?.addressSectionInfo, ids.propertyId) ?? ids.canonicalUrl);
       return textResult({
         property_id: ids.propertyId,
         listing_id: ids.listingId,

@@ -1,11 +1,9 @@
 // RedfinClient is the thin, tool-facing API over a RedfinTransport.
 //
-// Three fetch primitives:
+// Two fetch primitives:
 //   - fetchHtml(path)          → raw HTML string (used for SSR pages
 //                                where we regex-extract IDs, e.g. the
 //                                favorites page)
-//   - fetchJson(path, init)    → standard JSON endpoint (currently
-//                                unused but kept for forward compat)
 //   - fetchStingrayJson(path)  → Redfin's `/stingray/...` API endpoints
 //                                respond with a literal `{}&&` prefix
 //                                before the JSON body (an anti-CSRF
@@ -118,33 +116,6 @@ export class RedfinClient {
       );
     }
     return result.url;
-  }
-
-  /**
-   * POST/PUT/DELETE a JSON body, return the parsed JSON. Throws on
-   * non-2xx, invalid JSON, or sign-in page.
-   */
-  async fetchJson<T>(
-    path: string,
-    init: {
-      method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
-      headers?: Record<string, string>;
-      body?: unknown;
-    } = {}
-  ): Promise<T> {
-    const method = init.method ?? 'POST';
-    // 0.10.0+: serialize-body / JSON-header-default / 204-as-null /
-    // JSON.parse all live in the server's `requestJson` now. It returns
-    // BOTH the parsed `data` and the raw `result` and runs NO status /
-    // sign-in checks — those guards differ per site, so we keep Redfin's
-    // here over `result`.
-    const { data, result } = await this.transport.requestJson<T>(method, path, {
-      headers: init.headers,
-      body: init.body,
-    });
-    this.throwIfNotOk(result, method, path);
-    this.throwIfSignInPage(result);
-    return data as T;
   }
 
   /**
