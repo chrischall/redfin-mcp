@@ -306,6 +306,23 @@ describe('mapEventType (#48 shared enum)', () => {
     expect(mapEventType('Mystery event')).toBe('Unknown');
     expect(mapEventType(undefined)).toBe('Unknown');
   });
+
+  // CANONICAL DELTA (#48): the shared mapper word-boundary-anchors
+  // `\bactive\b` / `\bclosed\b`, so substrings inside a larger word no
+  // longer false-match. Redfin's old inline mapper had no `active` /
+  // `closed` rules at all, so these are net-new correct classifications.
+  it('DELTA: word-boundary "active"/"closed" — Inactive/Foreclosed do not false-match', () => {
+    expect(mapEventType('Active')).toBe('Listed');
+    expect(mapEventType('Inactive')).toBe('Unknown'); // not Listed
+    expect(mapEventType('Closed')).toBe('Sold');
+    expect(mapEventType('Foreclosed')).toBe('Unknown'); // not Sold
+  });
+
+  it('DELTA: wider cohort synonyms now classify', () => {
+    expect(mapEventType('Coming Soon')).toBe('Listed');
+    expect(mapEventType('Off Market')).toBe('Delisted');
+    expect(mapEventType('Price Drop')).toBe('PriceChange');
+  });
 });
 
 describe('normalizeEvents (#48 cross-MCP shape)', () => {

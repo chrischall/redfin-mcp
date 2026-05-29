@@ -3,170 +3,103 @@
  * otherwise redoing dozens of times per session. Centralized here so
  * properties / compare / search / history all use the same formulas.
  *
- * Issues covered:
- *   - #34: hoa_monthly_usd (Annually / Quarterly / SemiAnnually / Weekly → USD/month)
- *   - #35: price_drop_amount + price_drop_percent
- *   - #36: tax_annual placeholder cleanup + tax_is_estimated / tax_status
- *   - #41: portal_url_hyperlink (Google-Sheets =HYPERLINK(...) formula)
- *   - #42: address_alternates[] (MLS-feed mismatch surfacing)
- *   - #50: last_sold_date + last_sold_price (from price-history)
- *   - #82: lot_size_acres (sq ft → acres, derived alongside #81's lot_size)
- */
-
-/** Square feet in one acre. */
-const SQFT_PER_ACRE = 43_560;
-
-/**
- * Derive lot size in acres from a square-foot lot size, rounded to 2 dp
- * (#82). Pairs with the raw `lot_size` (#81) — acreage is the unit that
- * matters for rural/mountain/land listings.
+ * As of the realty-core migration (realty-mcp#1) the pure helpers that
+ * were byte-identical across the cohort now live in
+ * `@chrischall/realty-core` and are imported below. This file keeps only
+ * the THIN redfin-specific adapters where the canonical signature/shape
+ * differs from what redfin's tools call:
  *
- * Null-safe: returns `null` (never `0`) when the input is missing,
- * non-numeric, or `0` — a `0` lot is treated as absent (condos / missing
- * public records), matching how `lot_size` itself nulls out rather than
- * reporting a real "0 acre" lot.
- */
-export function lotSizeAcres(
-  lotSqFt: number | undefined | null
-): number | null {
-  if (typeof lotSqFt !== 'number' || !Number.isFinite(lotSqFt) || lotSqFt <= 0) {
-    return null;
-  }
-  return Math.round((lotSqFt / SQFT_PER_ACRE) * 100) / 100;
-}
-
-/**
- * Convert an HOA `{amount, frequency}` to monthly USD, rounded to the
- * nearest dollar. Returns `null` for unknown frequency strings (with a
- * stderr warning) or when the inputs are absent.
+ *   - `lotSizeAcres`      → re-export of `sqftToAcres` (identical math)
+ *   - `hoaToMonthlyUsd`   → re-export (canonical is a superset)
+ *   - `cleanTaxAnnual`    → re-export (CANONICAL DELTA: <10 sentinel)
+ *   - `collectAddressAlternates` / `normalizeAddressForCompare`
+ *                         → re-export (byte-identical)
+ *   - `priceDrop`         → wrapper: canonical takes (previous, current)
+ *                           and returns `{amount,percent}|null`; redfin's
+ *                           call sites + field names want
+ *                           `(current, previous) → {price_drop_amount,
+ *                           price_drop_percent}`.
+ *   - `buildPortalUrlHyperlink` → wrapper over `buildHyperlinkFormula`
+ *                           with redfin's fixed `"Redfin"` label.
+ *   - `lastSold`          → wrapper over the generic accessor-based
+ *                           canonical helper, echoing back redfin's ISO
+ *                           `last_sold_date` shape.
  *
- * Frequencies modelled match Redfin's MLS-feed vocabulary
- * (`Annually` / `Quarterly` / `Monthly` / `SemiAnnually` / `Weekly`).
+ * Issues covered (original): #34 hoa_monthly_usd, #35 price_drop_*,
+ * #36 tax cleanup, #41 portal_url_hyperlink, #42 address_alternates,
+ * #50 last_sold_*, #82 lot_size_acres.
  */
-export function hoaToMonthlyUsd(
-  amount: number | undefined | null,
-  frequency: string | undefined | null
-): number | null {
-  if (typeof amount !== 'number' || !frequency) return null;
-  let monthly: number;
-  switch (frequency) {
-    case 'Monthly':
-      monthly = amount;
-      break;
-    case 'Annually':
-      monthly = amount / 12;
-      break;
-    case 'Quarterly':
-      monthly = amount / 3;
-      break;
-    case 'SemiAnnually':
-      monthly = amount / 6;
-      break;
-    case 'Weekly':
-      monthly = (amount * 52) / 12;
-      break;
-    default:
-      console.error(
-        `[redfin-mcp] hoa_monthly_usd: unknown HOA frequency "${frequency}" — returning null`
-      );
-      return null;
-  }
-  return Math.round(monthly);
-}
+import {
+  priceDrop as priceDropCore,
+  buildHyperlinkFormula,
+  lastSold as lastSoldCore,
+} from '@chrischall/realty-core';
+
+// Byte-identical re-exports — these now live canonically in realty-core.
+//
+// `lotSizeAcres` is realty-core's `sqftToAcres` under redfin's name:
+// same `round(sqft / 43560, 2)` math and the same `<= 0 → null` guard,
+// so it's a drop-in for every value redfin passes (the property
+// formatter already pre-nulls a 0/absent lotSqFt). Kept under the local
+// name so call sites read as `lot_size_acres`.
+export { sqftToAcres as lotSizeAcres } from '@chrischall/realty-core';
+export { hoaToMonthlyUsd } from '@chrischall/realty-core';
+// CANONICAL DELTA (#36): the not-yet-assessed sentinel threshold widened
+// from redfin's `=== 0 || === 1` to realty-core's `< 10` (calibrated by
+// homes-mcp against real new-build listings returning tax_annual 2–9).
+// Values 2–9 are now treated as `not_yet_assessed` rather than real
+// bills. See tests/derived.test.ts for the updated assertions.
+export { cleanTaxAnnual } from '@chrischall/realty-core';
+export {
+  collectAddressAlternates,
+  normalizeAddressForCompare,
+} from '@chrischall/realty-core';
 
 /**
  * `{ price_drop_amount, price_drop_percent }` from a current+previous
- * list price. Returns `{null, null}` whenever either is missing.
- * Percent rounded to 0.1.
+ * list price. Returns `{null, null}` whenever there's no real drop.
+ *
+ * Thin adapter over realty-core's `priceDrop`, which takes args in
+ * `(previous, current)` order and returns either `{ amount, percent }`
+ * (on a real drop) or `null` (no drop / bad inputs). Redfin's tools and
+ * output fields use the `(current, previous)` order and the verbose
+ * `price_drop_*` key names, so we reshape here. Behavior is identical to
+ * the old inline version for redfin's inputs (a non-drop — current >=
+ * previous — yields `{null, null}` either way).
  */
 export function priceDrop(
   currentPrice: number | undefined | null,
   previousPrice: number | undefined | null
 ): { price_drop_amount: number | null; price_drop_percent: number | null } {
-  if (
-    typeof currentPrice !== 'number' ||
-    typeof previousPrice !== 'number' ||
-    previousPrice === 0
-  ) {
-    return { price_drop_amount: null, price_drop_percent: null };
-  }
-  const amount = previousPrice - currentPrice;
-  const percent = Math.round((amount / previousPrice) * 1000) / 10;
-  return { price_drop_amount: amount, price_drop_percent: percent };
-}
-
-/**
- * Sentinel cleanup for tax_annual. Redfin returns `0` or `1` for
- * not-yet-assessed new-construction parcels — those values silently
- * corrupt downstream affordability/cost-of-ownership math when treated
- * as real bills.
- *
- * `tax_status: "not_yet_assessed"` is emitted only when the value is
- * the 0/1 placeholder; "estimated" / "actual" require an upstream
- * marker that Redfin doesn't currently expose, so they're left
- * unset until verified live.
- */
-export function cleanTaxAnnual(
-  raw: number | undefined | null
-): { tax_annual: number | null; tax_status: 'not_yet_assessed' | null } {
-  if (typeof raw !== 'number') return { tax_annual: null, tax_status: null };
-  if (raw === 0 || raw === 1) {
-    return { tax_annual: null, tax_status: 'not_yet_assessed' };
-  }
-  return { tax_annual: raw, tax_status: null };
+  const drop = priceDropCore(previousPrice ?? undefined, currentPrice ?? undefined);
+  if (!drop) return { price_drop_amount: null, price_drop_percent: null };
+  return { price_drop_amount: drop.amount, price_drop_percent: drop.percent };
 }
 
 /**
  * Google-Sheets `HYPERLINK` formula pointing at the canonical Redfin
- * URL. Pasting the value into a Sheets cell renders as a clickable
- * "Redfin" link.
+ * URL with a fixed `"Redfin"` label. Pasting the value into a Sheets
+ * cell renders as a clickable "Redfin" link.
+ *
+ * Thin adapter over realty-core's `buildHyperlinkFormula(url, label)`
+ * (which escapes embedded `"` in both the url and the label — redfin
+ * already did this for the url, so no behavior change).
  */
 export function buildPortalUrlHyperlink(canonicalUrl: string): string {
-  // Escape any literal double-quote in the URL for the Sheets formula.
-  const safe = canonicalUrl.replace(/"/g, '""');
-  return `=HYPERLINK("${safe}","Redfin")`;
-}
-
-/**
- * Normalize an address for equality checks — collapse whitespace, drop
- * common punctuation, lowercase. Used to dedupe `address_alternates`
- * against the primary address.
- */
-function normalizeAddressForCompare(s: string | undefined | null): string {
-  if (!s) return '';
-  return s.toLowerCase().replace(/[,#.]/g, '').replace(/\s+/g, ' ').trim();
-}
-
-/**
- * Collect alternate address strings from the raw payload, excluding any
- * that match the primary. Returns an empty array when nothing
- * surfaces. Candidates today: arbitrary MLS-feed-supplied strings the
- * caller passes via the `candidates` argument.
- */
-export function collectAddressAlternates(
-  primary: string | undefined | null,
-  candidates: Array<string | undefined | null>
-): string[] {
-  const primaryNorm = normalizeAddressForCompare(primary);
-  const seen = new Set<string>();
-  const alternates: string[] = [];
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    const norm = normalizeAddressForCompare(candidate);
-    if (!norm || norm === primaryNorm || seen.has(norm)) continue;
-    seen.add(norm);
-    alternates.push(candidate);
-  }
-  return alternates;
+  return buildHyperlinkFormula(canonicalUrl, 'Redfin');
 }
 
 /**
  * Extract the most recent Sold event from a Redfin price-history event
  * list. Returns `{null, null}` when no Sold event is present.
  *
- * Redfin's `eventDescription` includes things like "Listed", "Price
- * Changed", "Sold (Public Records)", "Sold (MLS)". A simple
- * case-insensitive substring check on "Sold" is the reliable signal.
+ * Thin adapter over realty-core's generic `lastSold(events, accessors)`:
+ * we supply redfin's `{ eventDescription, eventDate (epoch ms), price }`
+ * accessors and convert the echoed-back epoch date to redfin's ISO
+ * `YYYY-MM-DD` `last_sold_date` shape. Sold-event detection now goes
+ * through realty-core's `mapEventType` (so "Sold (Public Records)" /
+ * "Sold (MLS)" / "Closed" all count, while "Foreclosed" no longer
+ * false-matches) rather than a raw `/sold/i` substring test.
  */
 export function lastSold(
   events: Array<{
@@ -175,14 +108,16 @@ export function lastSold(
     price?: number;
   }>
 ): { last_sold_date: string | null; last_sold_price: number | null } {
-  const sold = events
-    .filter((e) => /sold/i.test(e.eventDescription ?? ''))
-    .filter((e) => typeof e.eventDate === 'number')
-    .sort((a, b) => (b.eventDate ?? 0) - (a.eventDate ?? 0));
-  const top = sold[0];
-  if (!top) return { last_sold_date: null, last_sold_price: null };
+  const top = lastSoldCore(events, {
+    date: (e) => e.eventDate,
+    price: (e) => e.price,
+    type: (e) => e.eventDescription,
+  });
+  if (!top || typeof top.date !== 'number') {
+    return { last_sold_date: null, last_sold_price: null };
+  }
   return {
-    last_sold_date: new Date(top.eventDate ?? 0).toISOString().slice(0, 10),
-    last_sold_price: typeof top.price === 'number' ? top.price : null,
+    last_sold_date: new Date(top.date).toISOString().slice(0, 10),
+    last_sold_price: top.price,
   };
 }
