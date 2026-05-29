@@ -16,7 +16,7 @@ This is a "Pattern A" fetchproxy MCP (every call rides through fetchproxy), not 
 | `redfin_get_by_address` | `tools/get-by-address.ts` | `GET /stingray/do/location-autocomplete?location=…` → first `Addresses` row → parse `/home/<id>` | read |
 | `redfin_get_property` | `tools/properties.ts` | (a) `GET /stingray/api/home/details/initialInfo?path=…` → propertyId+listingId<br>(b) `GET /stingray/api/home/details/aboveTheFold?propertyId=…&listingId=…` | read |
 | `redfin_get_property_photos` | `tools/photos.ts` | (a) optional `initialInfo` to resolve IDs<br>(b) `GET /stingray/api/home/details/aboveTheFold?…` (mediaBrowserInfo.photos[]) | read |
-| `redfin_get_market_report` | `tools/market.ts` | `GET /stingray/api/region/<region_type>/<region_id>/<property_type>/offer-insights` | read |
+| `redfin_get_market_report` | `tools/market.ts` | `GET /stingray/api/region/<region_type>/<region_id>/<property_type>/market-trends` | read |
 | `redfin_get_price_history` | `tools/history.ts` | `GET /stingray/api/home/details/belowTheFold?propertyId=…&listingId=…` | read |
 | `redfin_compare_properties` | `tools/compare.ts` | `GET /stingray/api/home/details/aboveTheFold?…` ×N (concurrent) | read |
 | `redfin_get_climate_risk` | `tools/climate.ts` | `GET /<homedetails-path>` HTML — extract `floodData`/`fireData`/`heatData` blocks | read |
@@ -46,14 +46,33 @@ src/
                         #   /stingray/do/location-autocomplete
   url.ts                # urlToPath — reduce a Redfin URL or bare path
                         #   to its path+search portion
-  mcp.ts                # textResult() result-wrapper
-  tools/
+  suffix.ts             # expandAddressVariants — Rd ↔ Road street-suffix swaps
+  geo.ts                # ZIP → plausible-state guard (homesMatchZipState)
+  derived.ts            # thin adapters over @chrischall/realty-core derived
+                        #   fields (lot_size_acres, price_drop_*, last_sold_*, …)
+  features.ts           # extractFeatures — structured listing-feature flags
+  resolve.ts            # shared address-resolution rung ladder + per-locality
+                        #   pool cache (get_by_address + resolve_addresses)
+  sessions.ts           # in-process session registry (set/get active session)
+  mcp.ts                # textResult() result-wrapper + unwrapValue() helper
+  tools/                # one registerXxxTools(server, client) per file (16):
     search.ts           # redfin_search_properties (buildGisPath + formatHome)
-    properties.ts       # redfin_get_property (initialInfo + aboveTheFold)
-    market.ts           # redfin_get_market_report (offer-insights endpoint)
+    properties.ts       # redfin_get_property (initialInfo + ATF/BTF)
+    get-by-address.ts   # redfin_get_by_address (single-address resolve)
+    bulk-get.ts         # redfin_bulk_get (concurrent ATF/BTF fan-out)
+    compare.ts          # redfin_compare_properties (side-by-side + summary)
+    photos.ts           # redfin_get_property_photos (mediaBrowserInfo gallery)
+    history.ts          # redfin_get_price_history (belowTheFold events)
+    market.ts           # redfin_get_market_report (market-trends endpoint)
+    climate.ts          # redfin_get_climate_risk (flood/fire/heat HTML extract)
+    rentals.ts          # redfin_get_comparable_rentals
     saved.ts            # redfin_get_saved_homes + redfin_get_saved_searches
                         #   (HTML extract → optional homecards API)
-    mortgage.ts         # redfin_calculate_mortgage (local PITI)
+    resolve-addresses.ts # redfin_resolve_addresses (bulk address → URL/home_id)
+    mortgage.ts         # redfin_calculate_mortgage (local PITI; realty-core)
+    affordability.ts    # redfin_calculate_affordability (local DTI; realty-core)
+    healthcheck.ts      # redfin_healthcheck (bridge probe)
+    sessions.ts         # redfin_{register,set_active,get_session_context}
 
 tests/                  # 1:1 mirror of src/, plus tests/helpers.ts harness.
                         #   All tests mock RedfinClient.{fetchHtml,fetchStingrayJson}.

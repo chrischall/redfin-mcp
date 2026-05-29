@@ -192,12 +192,17 @@ export class RedfinClient {
   }
 
   private throwIfSignInPage(result: FetchResult): void {
-    // Redfin signals a missing session via:
+    // This guard checks TWO missing-session signals:
     //   1. Redirect to /login (URL match).
-    //   2. Stingray envelope with resultCode != 0 and an
-    //      errorMessage mentioning login — caught in fetchStingrayJson.
-    //   3. AWS WAF challenge interstitial. Marker: the AWS WAF
-    //      `awswaf.com/...challenge.js` script is referenced inline.
+    //   2. AWS WAF challenge interstitial. Marker: the AWS WAF
+    //      `awswaf.com/...challenge.js` script is referenced inline,
+    //      with a small body (< 80KB) so a normal page that merely links
+    //      to WAF assets doesn't false-positive.
+    //
+    // A THIRD signal — a stingray envelope with resultCode != 0 whose
+    // errorMessage mentions login — is handled separately in
+    // `fetchStingrayJson` (it inspects the parsed envelope, not the raw
+    // result this method sees), so it is intentionally NOT checked here.
     //
     // We deliberately do NOT body-match `/login` since every signed-in
     // Redfin page has a "Sign in" link in its nav.
