@@ -402,4 +402,93 @@ describe('redfin_resolve_addresses tool', () => {
     expect(parsed.results[0].home_id).toBe('99001');
     expect(parsed.results[0].matched_via).toBe('search_fallback');
   });
+
+  it('PERF: a same-city batch does ONE region lookup + ONE gis pull, not N', async () => {
+    // Two rows in the same locality, both missing autocomplete and
+    // falling through to the search-fallback rung. The batch shares a
+    // pool cache, so the expensive region resolve + ~350-home gis pull
+    // each fire exactly once regardless of row count.
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (q === 'Lake Lure NC') {
+          return {
+            resultCode: 0,
+            payload: {
+              sections: [
+                {
+                  name: 'Places',
+                  rows: [
+                    {
+                      id: '2_555',
+                      name: 'Lake Lure',
+                      subName: 'NC, USA',
+                      url: '/city/555/NC/Lake-Lure',
+                    },
+                  ],
+                },
+              ],
+            },
+          };
+        }
+        return {
+          resultCode: 0,
+          payload: { sections: [{ name: 'Addresses', rows: [] }] },
+        };
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        return {
+          resultCode: 0,
+          payload: {
+            serviceRegionName: 'Lake-Lure',
+            homes: [
+              {
+                propertyId: 1,
+                url: '/NC/Lake-Lure/100-Oakwood-Dr-28746/home/1',
+                streetLine: { value: '100 Oakwood Dr' },
+                city: 'Lake Lure',
+                state: 'NC',
+                zip: '28746',
+              },
+              {
+                propertyId: 2,
+                url: '/NC/Lake-Lure/231-Bluebird-Rd-28746/home/2',
+                streetLine: { value: '231 Bluebird Rd' },
+                city: 'Lake Lure',
+                state: 'NC',
+                zip: '28746',
+              },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const r = await harness.callTool('redfin_resolve_addresses', {
+      addresses: [
+        { street: '100 Oakwood Dr', city: 'Lake Lure', state: 'NC', zip: '28746' },
+        { street: '231 Bluebird Rd', city: 'Lake Lure', state: 'NC', zip: '28746' },
+      ],
+    });
+    expect(r.isError).toBeFalsy();
+    const parsed = parseToolResult<{
+      results: Array<{ resolved: boolean; home_id?: string }>;
+    }>(r);
+    expect(parsed.results.map((x) => x.home_id)).toEqual(['1', '2']);
+
+    const calls = mockFetchStingrayJson.mock.calls.map((c) => c[0] as string);
+    const gisCalls = calls.filter((p) => p.startsWith('/stingray/api/gis'));
+    const regionCalls = calls.filter((p) => {
+      if (!p.startsWith('/stingray/do/location-autocomplete')) return false;
+      const q = decodeURIComponent(
+        (/location=([^&]+)/.exec(p)?.[1] ?? '').replace(/\+/g, ' ')
+      );
+      return q === 'Lake Lure NC';
+    });
+    expect(gisCalls).toHaveLength(1);
+    expect(regionCalls).toHaveLength(1);
+  });
 });

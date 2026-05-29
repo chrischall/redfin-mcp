@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RedfinClient } from '../src/client.js';
 import {
   buildVariants,
+  createLocalityPoolCache,
   resolveAddressWithFallbacks,
 } from '../src/resolve.js';
 
@@ -603,5 +604,249 @@ describe('resolveAddressWithFallbacks — search-fallback rung (#75)', () => {
         zip: '28746',
       })
     ).rejects.toThrow(/ZIP 28746/);
+  });
+});
+
+// ---------------------------------------------------------------------
+// Per-locality pool cache (batch memoization)
+//
+// Batch address resolution re-ran `resolveRegion` + the ~350-home gis
+// search per row. When many rows share a locality, that's N redundant
+// region lookups + N gis pulls. `createLocalityPoolCache()` memoizes the
+// region+gis pool keyed on the locality query so a same-city batch does
+// one region lookup + one gis pull total. Per-row street-token scoring
+// still runs locally against the shared pool.
+// ---------------------------------------------------------------------
+describe('resolveAddressWithFallbacks — per-locality pool cache', () => {
+  const mockFetchStingrayJson = vi.fn();
+  const mockClient = {
+    fetchStingrayJson: mockFetchStingrayJson,
+  } as unknown as RedfinClient;
+
+  beforeEach(() => vi.clearAllMocks());
+
+  const emptyAddressesResponse = {
+    resultCode: 0,
+    payload: { sections: [{ name: 'Addresses', rows: [] }] },
+  };
+
+  const placesPayload = (region_id: number, name: string, sub: string) => ({
+    resultCode: 0,
+    payload: {
+      sections: [
+        {
+          name: 'Places',
+          rows: [
+            {
+              id: `2_${region_id}`,
+              name,
+              subName: sub,
+              url: `/city/${region_id}/NC/${name.replace(/ /g, '-')}`,
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  const gisPayload = (
+    homes: Array<{
+      propertyId: number;
+      url: string;
+      streetLine: string;
+      city: string;
+      state: string;
+      zip: string;
+    }>,
+    serviceRegionName = 'Lake-Lure'
+  ) => ({
+    resultCode: 0,
+    payload: {
+      serviceRegionName,
+      homes: homes.map((h) => ({
+        propertyId: h.propertyId,
+        url: h.url,
+        streetLine: { value: h.streetLine },
+        city: h.city,
+        state: h.state,
+        zip: h.zip,
+      })),
+    },
+  });
+
+  /** Wire up a mock where every address query misses autocomplete, the
+   *  region query resolves, and the gis pull returns two distinct homes. */
+  const wireSharedLocality = () => {
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (q === 'Lake Lure NC') {
+          return placesPayload(555, 'Lake Lure', 'NC, USA');
+        }
+        return emptyAddressesResponse;
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        return gisPayload([
+          {
+            propertyId: 1,
+            url: '/NC/Lake-Lure/100-Oakwood-Dr-28746/home/1',
+            streetLine: '100 Oakwood Dr',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+          },
+          {
+            propertyId: 2,
+            url: '/NC/Lake-Lure/231-Bluebird-Rd-28746/home/2',
+            streetLine: '231 Bluebird Rd',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+          },
+        ]);
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+  };
+
+  const countCalls = (matcher: RegExp): number =>
+    mockFetchStingrayJson.mock.calls.filter((c) => matcher.test(c[0] as string))
+      .length;
+
+  it('memoizes the region lookup + gis pull across same-locality rows', async () => {
+    wireSharedLocality();
+    const pool = createLocalityPoolCache();
+
+    // Two rows in the same city; both miss autocomplete and fall through
+    // to the search-fallback rung. The region resolve ("Lake Lure NC")
+    // and the gis pull must each happen exactly ONCE despite two rows.
+    const first = await resolveAddressWithFallbacks(
+      mockClient,
+      { street: '100 Oakwood Dr', city: 'Lake Lure', state: 'NC', zip: '28746' },
+      { pool }
+    );
+    const second = await resolveAddressWithFallbacks(
+      mockClient,
+      { street: '231 Bluebird Rd', city: 'Lake Lure', state: 'NC', zip: '28746' },
+      { pool }
+    );
+
+    expect(first.match?.home_id).toBe('1');
+    expect(second.match?.home_id).toBe('2');
+    expect(first.matchedVia).toBe('search_fallback');
+    expect(second.matchedVia).toBe('search_fallback');
+
+    // Region resolution is the "Lake Lure NC" autocomplete call; with the
+    // pool cache it fires once, not once-per-row.
+    const regionCalls = mockFetchStingrayJson.mock.calls.filter((c) => {
+      const p = c[0] as string;
+      if (!p.startsWith('/stingray/do/location-autocomplete')) return false;
+      const q = decodeURIComponent(
+        (/location=([^&]+)/.exec(p)?.[1] ?? '').replace(/\+/g, ' ')
+      );
+      return q === 'Lake Lure NC';
+    }).length;
+    expect(regionCalls).toBe(1);
+    // The expensive gis pull also fires exactly once.
+    expect(countCalls(/\/stingray\/api\/gis/)).toBe(1);
+  });
+
+  it('without a shared pool, each row re-runs the region lookup + gis pull', async () => {
+    // Control: same two rows but NO pool — confirms the memoization is
+    // what collapses the calls, not some other dedup.
+    wireSharedLocality();
+
+    await resolveAddressWithFallbacks(mockClient, {
+      street: '100 Oakwood Dr',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+    await resolveAddressWithFallbacks(mockClient, {
+      street: '231 Bluebird Rd',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+
+    expect(countCalls(/\/stingray\/api\/gis/)).toBe(2);
+  });
+
+  it('keys the pool per distinct locality — different cities each pull once', async () => {
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (q === 'Lake Lure NC') return placesPayload(555, 'Lake Lure', 'NC');
+        if (q === 'Asheville NC') return placesPayload(777, 'Asheville', 'NC');
+        return emptyAddressesResponse;
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        // Region id appears in the gis path; key the home off it.
+        const isAsheville = /region_id=777/.test(path);
+        return gisPayload([
+          {
+            propertyId: isAsheville ? 77 : 55,
+            url: isAsheville
+              ? '/NC/Asheville/9-Pine-St-28801/home/77'
+              : '/NC/Lake-Lure/9-Pine-St-28746/home/55',
+            streetLine: '9 Pine St',
+            city: isAsheville ? 'Asheville' : 'Lake Lure',
+            state: 'NC',
+            zip: isAsheville ? '28801' : '28746',
+          },
+        ], isAsheville ? 'Asheville' : 'Lake-Lure');
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const pool = createLocalityPoolCache();
+    const a = await resolveAddressWithFallbacks(
+      mockClient,
+      { street: '9 Pine St', city: 'Lake Lure', state: 'NC', zip: '28746' },
+      { pool }
+    );
+    const b = await resolveAddressWithFallbacks(
+      mockClient,
+      { street: '9 Pine St', city: 'Asheville', state: 'NC', zip: '28801' },
+      { pool }
+    );
+
+    expect(a.match?.home_id).toBe('55');
+    expect(b.match?.home_id).toBe('77');
+    // Two distinct localities → two gis pulls (one each, not cross-shared).
+    expect(countCalls(/\/stingray\/api\/gis/)).toBe(2);
+  });
+
+  it('memoizes a region MISS too — a dead locality is not re-queried', async () => {
+    mockFetchStingrayJson.mockResolvedValue(emptyAddressesResponse);
+    const pool = createLocalityPoolCache();
+
+    await resolveAddressWithFallbacks(
+      mockClient,
+      { street: '1 Nowhere Ln', city: 'Nowhere', state: 'NC', zip: '99999' },
+      { pool }
+    );
+    const callsAfterFirst = mockFetchStingrayJson.mock.calls.length;
+    await resolveAddressWithFallbacks(
+      mockClient,
+      { street: '2 Nowhere Ln', city: 'Nowhere', state: 'NC', zip: '99999' },
+      { pool }
+    );
+    // The region-resolution call for "Nowhere NC" must be cached as a
+    // miss — the second row only spends its own autocomplete attempts.
+    const regionMissCalls = mockFetchStingrayJson.mock.calls.filter((c) => {
+      const p = c[0] as string;
+      const q = decodeURIComponent(
+        (/location=([^&]+)/.exec(p)?.[1] ?? '').replace(/\+/g, ' ')
+      );
+      return q === 'Nowhere NC';
+    }).length;
+    expect(regionMissCalls).toBe(1);
+    // Second row's extra calls are only its two address-variant attempts.
+    expect(mockFetchStingrayJson.mock.calls.length).toBe(callsAfterFirst + 2);
   });
 });

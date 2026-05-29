@@ -6,7 +6,11 @@ import {
 } from '@fetchproxy/server';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
-import { resolveAddressWithFallbacks } from '../resolve.js';
+import {
+  createLocalityPoolCache,
+  resolveAddressWithFallbacks,
+  type LocalityPoolCache,
+} from '../resolve.js';
 
 /**
  * `redfin_resolve_addresses`: batch address-resolution for the
@@ -76,16 +80,20 @@ function inputToParts(input: AddressInput): {
 
 async function resolveOne(
   client: RedfinClient,
-  input: AddressInput
+  input: AddressInput,
+  pool?: LocalityPoolCache
 ): Promise<ResolvedAddressRow> {
   const parts = inputToParts(input);
   try {
     // Shared with `redfin_get_by_address`. Both tools run the same
     // fallback rungs (autocomplete + suffix expansion + search fallback)
     // so bulk callers see the same hit rate as the single tool. See
-    // #71 (parity audit) and #75 (search-fallback rung).
+    // #71 (parity audit) and #75 (search-fallback rung). The shared
+    // `pool` memoizes the search-fallback rung's region lookup + ~350-home
+    // gis pull across same-locality rows, so a same-city batch does one
+    // region lookup + one gis pull instead of N of each.
     const { match, attempts, matchedVariant, matchedVia } =
-      await resolveAddressWithFallbacks(client, parts);
+      await resolveAddressWithFallbacks(client, parts, { pool });
     const query = attempts[0] ?? parts.street;
     if (!match) return { input, query, resolved: false };
     return {
@@ -148,10 +156,14 @@ export function registerResolveAddressesTools(
       },
     },
     async ({ addresses }) => {
+      // One pool cache for the whole batch — memoizes the search-fallback
+      // rung's per-locality region lookup + gis pull so a same-city batch
+      // collapses to one region lookup + one gis pull total.
+      const pool = createLocalityPoolCache();
       const results = await mapWithConcurrency(
         addresses as AddressInput[],
         BRIDGE_CONCURRENCY,
-        (a) => resolveOne(client, a)
+        (a) => resolveOne(client, a, pool)
       );
       const ok = results.filter((r) => r.resolved).length;
       const unresolved = results.length - ok;

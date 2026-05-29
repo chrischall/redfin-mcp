@@ -212,6 +212,69 @@ function regionQueryFromInput(input: AddressParts): string | null {
   return null;
 }
 
+/**
+ * The resolved-once-per-locality pool: the region the locality query maps
+ * to plus the gis homes pulled for it. `null` is a memoized MISS (region
+ * not found OR gis returned nothing) so a dead locality isn't re-queried.
+ */
+interface LocalityPool {
+  region: RedfinRegion;
+  homes: RawHome[];
+  serviceRegionName?: string;
+}
+
+/**
+ * Memoization cache for the search-fallback rung's region lookup + gis
+ * pull, keyed on the locality query (`regionQueryFromInput`). Batch
+ * resolution ({@link registerResolveAddressesTools}) creates ONE cache
+ * per call and threads it through every row, so a same-city batch does a
+ * single region lookup + a single ~350-home gis pull instead of N of
+ * each. We cache the in-flight Promise (not just the resolved value) so
+ * concurrent rows fanned out by `mapWithConcurrency` coalesce onto one
+ * fetch rather than racing N identical ones.
+ */
+export type LocalityPoolCache = Map<string, Promise<LocalityPool | null>>;
+
+/** Create an empty per-locality pool cache for one batch. */
+export function createLocalityPoolCache(): LocalityPoolCache {
+  return new Map();
+}
+
+/**
+ * Resolve the region + gis home pool for a locality query, memoized
+ * through `cache` when one is supplied. The per-row street scoring and
+ * the `assertRegionMatches` guard run OUTSIDE this function (over the
+ * returned `homes`) because both depend on the individual row's street /
+ * ZIP — only the network round-trips (region resolve + gis pull) are
+ * shared. Returns null (a memoized miss) when the region can't be
+ * resolved or gis returns no homes.
+ */
+async function loadLocalityPool(
+  client: RedfinClient,
+  regionQuery: string,
+  cache?: LocalityPoolCache
+): Promise<LocalityPool | null> {
+  const cached = cache?.get(regionQuery);
+  if (cached) return cached;
+  const promise = (async (): Promise<LocalityPool | null> => {
+    const region: RedfinRegion | null = await resolveRegion(client, regionQuery);
+    if (!region) return null;
+    const path = buildGisPath(region, {
+      location: regionQuery,
+      limit: SEARCH_FALLBACK_HOME_LIMIT,
+    });
+    const env = await client.fetchStingrayJson<{
+      homes?: RawHome[];
+      serviceRegionName?: string;
+    }>(path);
+    const homes = env.payload?.homes ?? [];
+    if (homes.length === 0) return null;
+    return { region, homes, serviceRegionName: env.payload?.serviceRegionName };
+  })();
+  cache?.set(regionQuery, promise);
+  return promise;
+}
+
 /** Convert a matched gis home row into the canonical `RedfinAddress`
  * shape the autocomplete rung returns. Falls back gracefully when
  * the URL doesn't fit the canonical pattern (rare; just synthesizes
@@ -275,26 +338,23 @@ function homeToAddress(home: RawHome): RedfinAddress | null {
  */
 async function searchFallbackResolve(
   client: RedfinClient,
-  input: AddressParts
+  input: AddressParts,
+  cache?: LocalityPoolCache
 ): Promise<RedfinAddress | null> {
   const regionQuery = regionQueryFromInput(input);
   if (!regionQuery) return null;
-  const region: RedfinRegion | null = await resolveRegion(client, regionQuery);
-  if (!region) return null;
-  const path = buildGisPath(region, {
-    location: regionQuery,
-    limit: SEARCH_FALLBACK_HOME_LIMIT,
-  });
-  const env = await client.fetchStingrayJson<{
-    homes?: RawHome[];
-    serviceRegionName?: string;
-  }>(path);
-  const raw = env.payload?.homes ?? [];
+  // Region resolve + gis pull are memoized per locality (shared across a
+  // batch via `cache`); the guard + street scoring below run per-row.
+  const pool = await loadLocalityPool(client, regionQuery, cache);
+  if (!pool) return null;
+  const raw = pool.homes;
   // Reuse the existing silent-fallback guard — same one
   // `redfin_search_properties` runs. Surfaces ZIP→wrong-state,
   // unrelated serviceRegionName, and unrelated-homes cases. Pass the
   // ZIP when available so the ZIP→state path fires even though the
-  // region we resolved went through a city/state query.
+  // region we resolved went through a city/state query. Run per-row
+  // (not inside the cached pool load) since the verdict depends on this
+  // row's own ZIP.
   //
   // The guard throws with a `redfin_search_properties:` prefix
   // (it's the shared search guard). Rewrap so callers from
@@ -304,9 +364,9 @@ async function searchFallbackResolve(
   const guardInput = input.zip ?? regionQuery;
   try {
     assertRegionMatches(
-      region,
+      pool.region,
       {
-        serviceRegionName: env.payload?.serviceRegionName,
+        serviceRegionName: pool.serviceRegionName,
         homes: raw.map((h) => ({ city: h.city, state: h.state })),
       },
       guardInput
@@ -316,7 +376,6 @@ async function searchFallbackResolve(
     const stripped = msg.replace(/^redfin_search_properties:\s*/, '');
     throw new Error(`address resolution (search-fallback rung): ${stripped}`);
   }
-  if (raw.length === 0) return null;
   let best: { home: RawHome; score: number } | null = null;
   for (const home of raw) {
     const candStreet = streetLineOf(home);
@@ -340,7 +399,8 @@ async function searchFallbackResolve(
  */
 export async function resolveAddressWithFallbacks(
   client: RedfinClient,
-  input: AddressParts
+  input: AddressParts,
+  opts: { pool?: LocalityPoolCache } = {}
 ): Promise<ResolveResult> {
   const candidates = buildVariants(input);
   const attempts: string[] = [];
@@ -353,11 +413,12 @@ export async function resolveAddressWithFallbacks(
   }
   // Every autocomplete variant missed — try the search-fallback rung.
   // The marker entry in `attempts` lets callers see we tried it even
-  // when it ultimately returned null.
+  // when it ultimately returned null. `opts.pool`, when supplied,
+  // memoizes the region lookup + gis pull across same-locality rows.
   const regionQuery = regionQueryFromInput(input);
   if (regionQuery) {
     attempts.push(`search:${regionQuery}`);
-    const fallbackMatch = await searchFallbackResolve(client, input);
+    const fallbackMatch = await searchFallbackResolve(client, input, opts.pool);
     if (fallbackMatch) {
       return { match: fallbackMatch, attempts, matchedVia: 'search_fallback' };
     }
