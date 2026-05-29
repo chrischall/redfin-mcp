@@ -117,7 +117,7 @@ export function registerBulkGetTools(
     {
       title: 'Bulk fetch Redfin property records',
       description:
-        "Fetch up to 200 Redfin property records in a single tool call. Provide an array of targets, each either a `url` or a `property_id`+`listing_id` pair. Returns the same per-property record shape as `redfin_get_property`, but without a summary table — use `redfin_compare_properties` for that. Per-target errors are captured per-row; a single bad ID does not fail the batch. Server-side concurrency, ~6 in flight at a time. Use this when you have a list of saved homes / candidate properties and need the full structured data for every one of them.",
+        "Fetch up to 200 Redfin property records in a single tool call. Provide an array of targets, each one of: a `url` (full Redfin homedetails URL or path with the /home/<id> segment), a `property_id` alone (resolved internally by following Redfin's /home/<id> redirect to the canonical listing), or a `property_id`+`listing_id` pair (fastest — skips resolution). Returns the same per-property record shape as `redfin_get_property`, but without a summary table — use `redfin_compare_properties` for that. Per-target errors are captured per-row; a single bad ID does not fail the batch. Server-side concurrency, ~6 in flight at a time. Use this when you have a list of saved homes / candidate properties and need the full structured data for every one of them.",
       annotations: {
         title: 'Bulk fetch Redfin property records',
         readOnlyHint: true,
@@ -129,13 +129,30 @@ export function registerBulkGetTools(
           .array(
             z
               .object({
-                url: z.string().optional(),
-                property_id: z.number().int().positive().optional(),
-                listing_id: z.number().int().positive().optional(),
+                url: z
+                  .string()
+                  .optional()
+                  .describe(
+                    'Redfin homedetails URL or path including the /home/<id> segment.'
+                  ),
+                property_id: z
+                  .number()
+                  .int()
+                  .positive()
+                  .optional()
+                  .describe(
+                    'Numeric Redfin property ID. Sufficient on its own — when no listing_id/url is given it is resolved internally via the /home/<id> redirect. Pair with listing_id to skip that resolve.'
+                  ),
+                listing_id: z
+                  .number()
+                  .int()
+                  .positive()
+                  .optional()
+                  .describe('Numeric Redfin listing ID. Optional; pairs with property_id to skip resolution.'),
               })
               .refine(
-                (v) => !!v.url || (!!v.property_id && !!v.listing_id),
-                'each target needs url, or property_id+listing_id'
+                (v) => !!v.url || !!v.property_id,
+                'each target needs a url, a property_id alone, or a property_id+listing_id pair'
               )
           )
           .min(1)

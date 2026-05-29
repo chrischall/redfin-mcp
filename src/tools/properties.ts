@@ -113,8 +113,18 @@ export async function resolveIds(
       initial: null,
     };
   }
+  // #89: property_id alone (no listing_id, no url). Redfin's Stingray
+  // initialInfo endpoint won't resolve the bare /home/<id> path, but
+  // Redfin's own /home/<id> URL 301s to the canonical slug. Follow that
+  // redirect to recover the slug, then fall through to the URL path below
+  // so initialInfo can hand back propertyId + listingId.
+  if (args.property_id && !args.listing_id && !args.url) {
+    args = { ...args, url: await client.resolveCanonicalUrl(args.property_id) };
+  }
   if (!args.url) {
-    throw new Error('provide either url, or both property_id + listing_id');
+    throw new Error(
+      'provide a url, a property_id alone, or a property_id + listing_id pair'
+    );
   }
   if (extractPropertyIdFromUrl(args.url) === null) {
     throw new InvalidPropertyUrlError(
@@ -423,7 +433,7 @@ export function registerPropertyTools(
     {
       title: 'Get Redfin property details',
       description:
-        "Fetch a property's full Redfin record. Provide either (a) `url` — full Redfin homedetails URL or path, which we'll resolve via the initialInfo endpoint, or (b) `property_id` + `listing_id` — skip the resolution and go straight to aboveTheFold. Returns address, beds/baths, sqft, lot_size (sq ft), year built, price, status, days on market, the primary photo URL, plus derived fields (lot_size_acres, price_drop_*, hoa_monthly_usd, last_sold_*, tax_annual, extracted_features). lot_size / lot_size_acres are null (never 0) for condos and listings with no public-records lot. The raw marketing description is OMITTED by default — opt in with `include_description: true`. Set `include_price_history: true` to bundle the full price history (and the cross-MCP-normalized `events_normalized` view) inline; set `include_tax_history: true` for `tax_history`. Read-only; safe to call repeatedly.",
+        "Fetch a property's full Redfin record. Provide one of: (a) `url` — full Redfin homedetails URL or path, resolved via the initialInfo endpoint; (b) `property_id` alone — resolved internally by following Redfin's /home/<id> redirect to the canonical listing, then initialInfo; or (c) `property_id` + `listing_id` — fastest, skips resolution and goes straight to aboveTheFold. Returns address, beds/baths, sqft, lot_size (sq ft), year built, price, status, days on market, the primary photo URL, plus derived fields (lot_size_acres, price_drop_*, hoa_monthly_usd, last_sold_*, tax_annual, extracted_features). lot_size / lot_size_acres are null (never 0) for condos and listings with no public-records lot. The raw marketing description is OMITTED by default — opt in with `include_description: true`. Set `include_price_history: true` to bundle the full price history (and the cross-MCP-normalized `events_normalized` view) inline; set `include_tax_history: true` for `tax_history`. Read-only; safe to call repeatedly.",
       annotations: {
         title: 'Get Redfin property details',
         readOnlyHint: true,
@@ -443,7 +453,7 @@ export function registerPropertyTools(
           .positive()
           .optional()
           .describe(
-            'Numeric Redfin property ID. Pair with listing_id to skip the URL resolve step.'
+            'Numeric Redfin property ID. Sufficient on its own — when no listing_id/url is given it is resolved internally via the /home/<id> redirect. Pair with listing_id to skip that resolve step entirely.'
           ),
         listing_id: z
           .number()
@@ -451,7 +461,7 @@ export function registerPropertyTools(
           .positive()
           .optional()
           .describe(
-            'Numeric Redfin listing ID. Required when property_id is provided.'
+            'Numeric Redfin listing ID. Optional; pairs with property_id to skip resolution.'
           ),
         include_description: z
           .boolean()

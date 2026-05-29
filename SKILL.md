@@ -49,7 +49,7 @@ That's it. No API keys, no env vars.
 ### Public data
 
 - **`redfin_search_properties`** — Search by location + filters (price, beds/baths min, home type). Resolves the location via Redfin's autocomplete then queries the `/stingray/api/gis` endpoint. Returns matching listings with price, beds/baths, sqft, year built, address, and the Redfin home URL.
-- **`redfin_get_property`** — Full property record by `url` (Redfin homedetails URL or path) or `property_id` + `listing_id`. Two-round-trip API: `initialInfo` resolves the URL to IDs, then `aboveTheFold` fetches the data. Returns address, beds/baths, sqft, year built, price, status, days on market, primary photo.
+- **`redfin_get_property`** — Full property record by `url` (Redfin homedetails URL or path), `property_id` alone (resolved internally by following Redfin's `/home/<id>` redirect to the canonical slug, then `initialInfo`), or `property_id` + `listing_id` (fastest — skips resolution). Two-round-trip API: `initialInfo` resolves the URL to IDs, then `aboveTheFold` fetches the data. Returns address, beds/baths, sqft, year built, price, status, days on market, primary photo.
 - **`redfin_get_market_report`** — Median sale/list prices, price per sqft, days on market, year-over-year change, homes sold/on market for a Redfin region. Provide either `location` (free-text) or `region_id` + `region_type`. All metrics returned as formatted strings (e.g. `"$870K"`, `"+2.4%"`).
 - **`redfin_calculate_mortgage`** — Local PITI calculator. No network call. Provide home price, interest rate, optional down payment / taxes / insurance / HOA / PMI; returns a full monthly breakdown.
 

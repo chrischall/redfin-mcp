@@ -11,8 +11,10 @@ import {
 import { createTestHarness, parseToolResult } from '../helpers.js';
 
 const mockFetchStingrayJson = vi.fn();
+const mockResolveCanonicalUrl = vi.fn();
 const mockClient = {
   fetchStingrayJson: mockFetchStingrayJson,
+  resolveCanonicalUrl: mockResolveCanonicalUrl,
 } as unknown as RedfinClient;
 
 let harness: Awaited<ReturnType<typeof createTestHarness>>;
@@ -87,6 +89,40 @@ describe('resolveIds URL validation', () => {
       listing_id: 100,
     });
     expect(ids.propertyId).toBe(42);
+    expect(mockFetchStingrayJson).not.toHaveBeenCalled();
+  });
+
+  it('resolves from property_id alone via the /home/<id> redirect then initialInfo (#89)', async () => {
+    // /home/12345 redirects to the canonical slug; we then run initialInfo
+    // on that slug to recover propertyId + listingId.
+    mockResolveCanonicalUrl.mockResolvedValueOnce(
+      'https://www.redfin.com/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345'
+    );
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: { propertyId: 12345, listingId: 999 },
+    });
+    const ids = await resolveIds(mockClient, { property_id: 12345 });
+    expect(mockResolveCanonicalUrl).toHaveBeenCalledWith(12345);
+    expect(ids.propertyId).toBe(12345);
+    expect(ids.listingId).toBe(999);
+    expect(ids.canonicalUrl).toBe(
+      'https://www.redfin.com/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345'
+    );
+    // initialInfo was called with the recovered canonical path.
+    const initPath = mockFetchStingrayJson.mock.calls[0][0] as string;
+    expect(initPath).toMatch(/initialInfo\?path=/);
+    expect(initPath).toContain(encodeURIComponent('/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345'));
+  });
+
+  it('propagates the redirect-resolve error when property_id alone cannot be resolved (#89)', async () => {
+    mockResolveCanonicalUrl.mockRejectedValueOnce(
+      new Error('Redfin property_id 12345 could not be resolved from its id alone')
+    );
+    await expect(
+      resolveIds(mockClient, { property_id: 12345 })
+    ).rejects.toThrow(/could not be resolved/);
+    // We never reached initialInfo.
     expect(mockFetchStingrayJson).not.toHaveBeenCalled();
   });
 });
@@ -374,6 +410,50 @@ describe('redfin_get_property tool', () => {
   it('errors when neither url nor property_id+listing_id provided', async () => {
     const result = await harness.callTool('redfin_get_property', {});
     expect(result.isError).toBeTruthy();
+  });
+
+  it('with property_id alone: follows the /home/<id> redirect, runs initialInfo, then ATF (#89)', async () => {
+    mockResolveCanonicalUrl.mockResolvedValueOnce(
+      'https://www.redfin.com/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345'
+    );
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        // initialInfo on the recovered slug
+        resultCode: 0,
+        payload: { propertyId: 12345, listingId: 888, marketId: 7 },
+      })
+      .mockResolvedValueOnce({
+        // ATF
+        resultCode: 0,
+        payload: {
+          addressSectionInfo: {
+            streetAddress: '268 Mallard Rd',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+            beds: 3,
+          },
+        },
+      });
+    const result = await harness.callTool('redfin_get_property', {
+      property_id: 12345,
+    });
+    expect(result.isError).toBeFalsy();
+    expect(mockResolveCanonicalUrl).toHaveBeenCalledWith(12345);
+    const initPath = mockFetchStingrayJson.mock.calls[0][0] as string;
+    expect(initPath).toMatch(/initialInfo\?path=/);
+    const parsed = parseToolResult<{
+      property_id: number;
+      listing_id: number;
+      beds: number;
+      url: string;
+    }>(result);
+    expect(parsed.property_id).toBe(12345);
+    expect(parsed.listing_id).toBe(888);
+    expect(parsed.beds).toBe(3);
+    expect(parsed.url).toBe(
+      'https://www.redfin.com/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345'
+    );
   });
 
   it('errors with InvalidPropertyUrlError when URL has no /home/<id> segment', async () => {
