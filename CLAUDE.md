@@ -37,7 +37,7 @@ src/
                         #   registers tool groups, connects stdio transport
   transport.ts          # RedfinTransport interface
   transport-fetchproxy.ts # adapter over @fetchproxy/server's FetchproxyServer
-  client.ts             # RedfinClient.fetchHtml / fetchJson / fetchStingrayJson
+  client.ts             # RedfinClient.fetchHtml / fetchStingrayJson
                         #   + sign-in detection (WAF challenge / /login redirect)
                         #   + stripStingrayPrefix helper
   autocomplete.ts       # resolveRegion / resolveAddress / resolveBoth:
@@ -108,7 +108,7 @@ REDFIN_COMMUNITIES_FILE=/path/to/communities.json  # override community vocabula
 - Tool return shape: `textResult(data)` from `src/mcp.ts` → `{ content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] }`. Don't hand-roll the wrapper.
 - Tool annotations: every tool sets `title`, `readOnlyHint: true`, `idempotentHint: true`, and `openWorldHint`. The last is `true` for network-bound tools and `false` for `redfin_calculate_mortgage` (pure local computation).
 - Path-only inputs to `RedfinClient`: pass `/some/path?with=query`, never a full URL. `FetchproxyTransport` prepends `https://www.redfin.com`. When a tool takes a `url` arg from the user, reduce it via `urlToPath` from `src/url.ts`.
-- Always use `client.fetchStingrayJson(...)` for `/stingray/...` endpoints — never `fetchJson`. Stingray responses carry a `{}&&` anti-CSRF prefix that has to be stripped, AND a `{resultCode, errorMessage, payload}` envelope that needs to be checked. The helper handles both.
+- Always use `client.fetchStingrayJson(...)` for `/stingray/...` endpoints. Stingray responses carry a `{}&&` anti-CSRF prefix that has to be stripped, AND a `{resultCode, errorMessage, payload}` envelope that needs to be checked. The helper handles both.
 - Write a failing test before implementation (TDD).
 - ESM + NodeNext: imports use `.js` extensions even for `.ts` source.
 - stdio transport: log warnings/banners to **stderr** only — stdout is reserved for JSON-RPC.
@@ -116,7 +116,7 @@ REDFIN_COMMUNITIES_FILE=/path/to/communities.json  # override community vocabula
 ## Redfin quirks
 
 - **No `__NEXT_DATA__`.** Redfin is a React Server Components app; the homepage and user pages do NOT embed a Next.js hydration blob. Tools that need data either (a) call a `/stingray/...` JSON API (search, property, market) or (b) regex-extract IDs from the page HTML and then call a JSON API (saved homes). The first call gets you propertyIds; the second gets the home cards.
-- **`{}&&` prefix on every stingray response.** This is Redfin's anti-CSRF measure — a literal four-byte prefix before the JSON body that would crash a naive `JSON.parse`. `RedfinClient.fetchStingrayJson` strips it. Don't try to parse stingray responses with `fetchJson` — it will fail.
+- **`{}&&` prefix on every stingray response.** This is Redfin's anti-CSRF measure — a literal four-byte prefix before the JSON body that would crash a naive `JSON.parse`. `RedfinClient.fetchStingrayJson` strips it; parsing a stingray response without going through that helper will fail.
 - **Envelope checks.** Stingray responses always wrap data in `{version, errorMessage, resultCode, payload}`. `fetchStingrayJson` throws on `resultCode !== 0`.
 - **Property-details takes two round trips.** The web app makes the same two calls: `initialInfo?path=<URL>` returns the propertyId+listingId, then `aboveTheFold?propertyId=…&listingId=…` returns the data. Pass `property_id`+`listing_id` directly to `redfin_get_property` to skip the first call.
 - **`property_id` alone resolves via the `/home/<id>` redirect (#89).** `initialInfo` will NOT resolve the bare `/home/<id>` path — it needs the full `/<STATE>/<City>/<Street>-<ZIP>/home/<id>` slug. So when a caller passes `property_id` with no `listing_id`/`url`, `RedfinClient.resolveCanonicalUrl(id)` GETs `/home/<id>`, lets the bridge follow Redfin's 301 to the canonical slug, and returns the redirected final URL (`FetchResult.url`); `resolveIds` then runs `initialInfo` on that slug. If the hop stays on the bare `/home/<id>` form (invalid/delisted id) it throws an actionable error. Used by `redfin_get_property` and `redfin_bulk_get`.
