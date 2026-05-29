@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
   computeMortgage,
   registerMortgageTools,
+  type MortgageBreakdown,
 } from '../../src/tools/mortgage.js';
 import { createTestHarness, parseToolResult } from '../helpers.js';
 
@@ -115,6 +116,23 @@ describe('computeMortgage', () => {
         loan_term_years: 0,
       })
     ).toThrow(/loan_term_years/);
+  });
+
+  it('echoes home_price (realty-core superset field) alongside the legacy shape', () => {
+    // The calculator now delegates to realty-core's `calculateMortgage`,
+    // whose `MortgageBreakdown` is a superset that adds `home_price`.
+    // Verify the input price is echoed back while the legacy fields are
+    // unchanged.
+    const b = computeMortgage({
+      home_price: 450_000,
+      down_payment_percent: 20,
+      interest_rate: 6,
+    });
+    expect((b as MortgageBreakdown & { home_price: number }).home_price).toBe(
+      450_000
+    );
+    expect(b.loan_amount).toBe(360_000);
+    expect(b.ltv_percent).toBe(80);
   });
 });
 
