@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.0](https://github.com/chrischall/redfin-mcp/compare/v0.7.0...v0.8.0) (2026-05-29)
+
+
+### Features
+
+* adopt realty-core extractFeatures (canonical basement detector) + drop inline copy ([#87](https://github.com/chrischall/redfin-mcp/issues/87)) ([c6a4c1e](https://github.com/chrischall/redfin-mcp/commit/c6a4c1ee975b67fbd3d92f28c541e61f7b05b932))
+* consume @chrischall/realty-core 0.3.0 — drop inline hoisted helpers ([#86](https://github.com/chrischall/redfin-mcp/issues/86)) ([565bf8f](https://github.com/chrischall/redfin-mcp/commit/565bf8f6b7c629c43b0b933678dc709a38f095b1))
+* **properties:** parse lot_size and derive lot_size_acres ([#83](https://github.com/chrischall/redfin-mcp/issues/83)) ([99c6b5e](https://github.com/chrischall/redfin-mcp/commit/99c6b5eff088a94cc01230874608d0f0f7e30e9d))
+
 ## [0.7.0](https://github.com/chrischall/redfin-mcp/compare/v0.6.0...v0.7.0) (2026-05-28)
 
 
