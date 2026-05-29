@@ -66,6 +66,39 @@ describe('computeAffordability', () => {
     });
     expect(r.max_home_price).toBeGreaterThan(100_000);
   });
+
+  it('preserves the full breakdown shape after delegating to realty-core', () => {
+    // The calculator now delegates to realty-core's
+    // `calculateAffordability` (a byte-identical drop-in). Confirm every
+    // field redfin's tool has always returned is still present so the
+    // output shape is unchanged.
+    const r = computeAffordability({
+      monthly_income: 10_000,
+      monthly_debts: 500,
+      down_payment: 80_000,
+      interest_rate: 6,
+      hoa_monthly: 200,
+      insurance_annual: 1200,
+      property_tax_rate: 1.2,
+    });
+    expect(Object.keys(r).sort()).toEqual(
+      [
+        'back_end_dti_used',
+        'binding_constraint',
+        'down_payment',
+        'front_end_dti_used',
+        'loan_amount',
+        'max_home_price',
+        'max_monthly_piti',
+        'monthly_hoa',
+        'monthly_insurance',
+        'monthly_principal_interest',
+        'monthly_property_tax',
+      ].sort()
+    );
+    expect(r.monthly_hoa).toBe(200);
+    expect(r.monthly_insurance).toBe(100); // 1200/12
+  });
 });
 
 describe('redfin_calculate_affordability tool', () => {

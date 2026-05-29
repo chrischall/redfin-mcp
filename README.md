@@ -39,7 +39,7 @@ You are agreeing to those terms — read by the maintainer 2026-05-23 — every 
 
 **3. Personal, non-commercial use only.** This project is not affiliated with, endorsed by, sponsored by, or in partnership with Redfin Corporation. It is a personal automation tool that calls the same `/stingray/...` endpoints redfin.com calls when you click around. Do not use it to bulk-extract listings, redistribute IDX data, train AI models, populate a competing real-estate product, or for any commercial purpose.
 
-**4. Stability is not guaranteed.** This server reads private internal endpoints (`/stingray/api/gis`, `/stingray/api/home/details/*`, `/stingray/api/region/.../offer-insights`, `/myredfin/*`) that Redfin may change without notice. It may break. It may stop working. That's by design — the surface is not theirs to maintain on our behalf.
+**4. Stability is not guaranteed.** This server reads private internal endpoints (`/stingray/api/gis`, `/stingray/api/home/details/*`, `/stingray/api/region/.../market-trends`, `/myredfin/*`) that Redfin may change without notice. It may break. It may stop working. That's by design — the surface is not theirs to maintain on our behalf.
 
 **5. You accept full responsibility** for any consequences of using this server in connection with your Redfin access — rate limiting, account suspension, IP blocks, AWS WAF challenges, or any enforcement action Redfin takes. If Redfin objects to your use, stop using this server.
 

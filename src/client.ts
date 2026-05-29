@@ -1,11 +1,9 @@
 // RedfinClient is the thin, tool-facing API over a RedfinTransport.
 //
-// Three fetch primitives:
+// Two fetch primitives:
 //   - fetchHtml(path)          → raw HTML string (used for SSR pages
 //                                where we regex-extract IDs, e.g. the
 //                                favorites page)
-//   - fetchJson(path, init)    → standard JSON endpoint (currently
-//                                unused but kept for forward compat)
 //   - fetchStingrayJson(path)  → Redfin's `/stingray/...` API endpoints
 //                                respond with a literal `{}&&` prefix
 //                                before the JSON body (an anti-CSRF
@@ -121,33 +119,6 @@ export class RedfinClient {
   }
 
   /**
-   * POST/PUT/DELETE a JSON body, return the parsed JSON. Throws on
-   * non-2xx, invalid JSON, or sign-in page.
-   */
-  async fetchJson<T>(
-    path: string,
-    init: {
-      method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
-      headers?: Record<string, string>;
-      body?: unknown;
-    } = {}
-  ): Promise<T> {
-    const method = init.method ?? 'POST';
-    // 0.10.0+: serialize-body / JSON-header-default / 204-as-null /
-    // JSON.parse all live in the server's `requestJson` now. It returns
-    // BOTH the parsed `data` and the raw `result` and runs NO status /
-    // sign-in checks — those guards differ per site, so we keep Redfin's
-    // here over `result`.
-    const { data, result } = await this.transport.requestJson<T>(method, path, {
-      headers: init.headers,
-      body: init.body,
-    });
-    this.throwIfNotOk(result, method, path);
-    this.throwIfSignInPage(result);
-    return data as T;
-  }
-
-  /**
    * GET a `/stingray/...` JSON endpoint. Strips the `{}&&` anti-CSRF
    * prefix before parsing. Returns the full envelope, which Redfin
    * shapes as `{ version, errorMessage, resultCode, payload }`.
@@ -192,12 +163,17 @@ export class RedfinClient {
   }
 
   private throwIfSignInPage(result: FetchResult): void {
-    // Redfin signals a missing session via:
+    // This guard checks TWO missing-session signals:
     //   1. Redirect to /login (URL match).
-    //   2. Stingray envelope with resultCode != 0 and an
-    //      errorMessage mentioning login — caught in fetchStingrayJson.
-    //   3. AWS WAF challenge interstitial. Marker: the AWS WAF
-    //      `awswaf.com/...challenge.js` script is referenced inline.
+    //   2. AWS WAF challenge interstitial. Marker: the AWS WAF
+    //      `awswaf.com/...challenge.js` script is referenced inline,
+    //      with a small body (< 80KB) so a normal page that merely links
+    //      to WAF assets doesn't false-positive.
+    //
+    // A THIRD signal — a stingray envelope with resultCode != 0 whose
+    // errorMessage mentions login — is handled separately in
+    // `fetchStingrayJson` (it inspects the parsed envelope, not the raw
+    // result this method sees), so it is intentionally NOT checked here.
     //
     // We deliberately do NOT body-match `/login` since every signed-in
     // Redfin page has a "Sign in" link in its nav.

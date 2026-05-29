@@ -12,7 +12,7 @@
  *   - `lotSizeAcres`      → re-export of `sqftToAcres` (identical math)
  *   - `hoaToMonthlyUsd`   → re-export (canonical is a superset)
  *   - `cleanTaxAnnual`    → re-export (CANONICAL DELTA: <10 sentinel)
- *   - `collectAddressAlternates` / `normalizeAddressForCompare`
+ *   - `collectAddressAlternates`
  *                         → re-export (byte-identical)
  *   - `priceDrop`         → wrapper: canonical takes (previous, current)
  *                           and returns `{amount,percent}|null`; redfin's
@@ -50,10 +50,7 @@ export { hoaToMonthlyUsd } from '@chrischall/realty-core';
 // Values 2–9 are now treated as `not_yet_assessed` rather than real
 // bills. See tests/derived.test.ts for the updated assertions.
 export { cleanTaxAnnual } from '@chrischall/realty-core';
-export {
-  collectAddressAlternates,
-  normalizeAddressForCompare,
-} from '@chrischall/realty-core';
+export { collectAddressAlternates } from '@chrischall/realty-core';
 
 /**
  * `{ price_drop_amount, price_drop_percent }` from a current+previous

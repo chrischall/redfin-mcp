@@ -118,7 +118,10 @@ function autocompletePath(query: string): string {
   const params = new URLSearchParams({
     location: query,
     start: '0',
-    count: '10',
+    // Only `rows[0]` of each section is ever read (resolveRegion /
+    // resolveAddress / resolveBoth all take the first row), so ask for a
+    // single row rather than the default ten.
+    count: '1',
     v: '2',
     iss: 'false',
     ooa: 'true',

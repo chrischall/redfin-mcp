@@ -16,7 +16,7 @@ This is a "Pattern A" fetchproxy MCP (every call rides through fetchproxy), not 
 | `redfin_get_by_address` | `tools/get-by-address.ts` | `GET /stingray/do/location-autocomplete?location=…` → first `Addresses` row → parse `/home/<id>` | read |
 | `redfin_get_property` | `tools/properties.ts` | (a) `GET /stingray/api/home/details/initialInfo?path=…` → propertyId+listingId<br>(b) `GET /stingray/api/home/details/aboveTheFold?propertyId=…&listingId=…` | read |
 | `redfin_get_property_photos` | `tools/photos.ts` | (a) optional `initialInfo` to resolve IDs<br>(b) `GET /stingray/api/home/details/aboveTheFold?…` (mediaBrowserInfo.photos[]) | read |
-| `redfin_get_market_report` | `tools/market.ts` | `GET /stingray/api/region/<region_type>/<region_id>/<property_type>/offer-insights` | read |
+| `redfin_get_market_report` | `tools/market.ts` | `GET /stingray/api/region/<region_type>/<region_id>/<property_type>/market-trends` | read |
 | `redfin_get_price_history` | `tools/history.ts` | `GET /stingray/api/home/details/belowTheFold?propertyId=…&listingId=…` | read |
 | `redfin_compare_properties` | `tools/compare.ts` | `GET /stingray/api/home/details/aboveTheFold?…` ×N (concurrent) | read |
 | `redfin_get_climate_risk` | `tools/climate.ts` | `GET /<homedetails-path>` HTML — extract `floodData`/`fireData`/`heatData` blocks | read |
@@ -37,7 +37,7 @@ src/
                         #   registers tool groups, connects stdio transport
   transport.ts          # RedfinTransport interface
   transport-fetchproxy.ts # adapter over @fetchproxy/server's FetchproxyServer
-  client.ts             # RedfinClient.fetchHtml / fetchJson / fetchStingrayJson
+  client.ts             # RedfinClient.fetchHtml / fetchStingrayJson
                         #   + sign-in detection (WAF challenge / /login redirect)
                         #   + stripStingrayPrefix helper
   autocomplete.ts       # resolveRegion / resolveAddress / resolveBoth:
@@ -46,14 +46,33 @@ src/
                         #   /stingray/do/location-autocomplete
   url.ts                # urlToPath — reduce a Redfin URL or bare path
                         #   to its path+search portion
-  mcp.ts                # textResult() result-wrapper
-  tools/
+  suffix.ts             # expandAddressVariants — Rd ↔ Road street-suffix swaps
+  geo.ts                # ZIP → plausible-state guard (homesMatchZipState)
+  derived.ts            # thin adapters over @chrischall/realty-core derived
+                        #   fields (lot_size_acres, price_drop_*, last_sold_*, …)
+  features.ts           # extractFeatures — structured listing-feature flags
+  resolve.ts            # shared address-resolution rung ladder + per-locality
+                        #   pool cache (get_by_address + resolve_addresses)
+  sessions.ts           # in-process session registry (set/get active session)
+  mcp.ts                # textResult() result-wrapper + unwrapValue() helper
+  tools/                # one registerXxxTools(server, client) per file (16):
     search.ts           # redfin_search_properties (buildGisPath + formatHome)
-    properties.ts       # redfin_get_property (initialInfo + aboveTheFold)
-    market.ts           # redfin_get_market_report (offer-insights endpoint)
+    properties.ts       # redfin_get_property (initialInfo + ATF/BTF)
+    get-by-address.ts   # redfin_get_by_address (single-address resolve)
+    bulk-get.ts         # redfin_bulk_get (concurrent ATF/BTF fan-out)
+    compare.ts          # redfin_compare_properties (side-by-side + summary)
+    photos.ts           # redfin_get_property_photos (mediaBrowserInfo gallery)
+    history.ts          # redfin_get_price_history (belowTheFold events)
+    market.ts           # redfin_get_market_report (market-trends endpoint)
+    climate.ts          # redfin_get_climate_risk (flood/fire/heat HTML extract)
+    rentals.ts          # redfin_get_comparable_rentals
     saved.ts            # redfin_get_saved_homes + redfin_get_saved_searches
                         #   (HTML extract → optional homecards API)
-    mortgage.ts         # redfin_calculate_mortgage (local PITI)
+    resolve-addresses.ts # redfin_resolve_addresses (bulk address → URL/home_id)
+    mortgage.ts         # redfin_calculate_mortgage (local PITI; realty-core)
+    affordability.ts    # redfin_calculate_affordability (local DTI; realty-core)
+    healthcheck.ts      # redfin_healthcheck (bridge probe)
+    sessions.ts         # redfin_{register,set_active,get_session_context}
 
 tests/                  # 1:1 mirror of src/, plus tests/helpers.ts harness.
                         #   All tests mock RedfinClient.{fetchHtml,fetchStingrayJson}.
@@ -89,7 +108,7 @@ REDFIN_COMMUNITIES_FILE=/path/to/communities.json  # override community vocabula
 - Tool return shape: `textResult(data)` from `src/mcp.ts` → `{ content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] }`. Don't hand-roll the wrapper.
 - Tool annotations: every tool sets `title`, `readOnlyHint: true`, `idempotentHint: true`, and `openWorldHint`. The last is `true` for network-bound tools and `false` for `redfin_calculate_mortgage` (pure local computation).
 - Path-only inputs to `RedfinClient`: pass `/some/path?with=query`, never a full URL. `FetchproxyTransport` prepends `https://www.redfin.com`. When a tool takes a `url` arg from the user, reduce it via `urlToPath` from `src/url.ts`.
-- Always use `client.fetchStingrayJson(...)` for `/stingray/...` endpoints — never `fetchJson`. Stingray responses carry a `{}&&` anti-CSRF prefix that has to be stripped, AND a `{resultCode, errorMessage, payload}` envelope that needs to be checked. The helper handles both.
+- Always use `client.fetchStingrayJson(...)` for `/stingray/...` endpoints. Stingray responses carry a `{}&&` anti-CSRF prefix that has to be stripped, AND a `{resultCode, errorMessage, payload}` envelope that needs to be checked. The helper handles both.
 - Write a failing test before implementation (TDD).
 - ESM + NodeNext: imports use `.js` extensions even for `.ts` source.
 - stdio transport: log warnings/banners to **stderr** only — stdout is reserved for JSON-RPC.
@@ -97,7 +116,7 @@ REDFIN_COMMUNITIES_FILE=/path/to/communities.json  # override community vocabula
 ## Redfin quirks
 
 - **No `__NEXT_DATA__`.** Redfin is a React Server Components app; the homepage and user pages do NOT embed a Next.js hydration blob. Tools that need data either (a) call a `/stingray/...` JSON API (search, property, market) or (b) regex-extract IDs from the page HTML and then call a JSON API (saved homes). The first call gets you propertyIds; the second gets the home cards.
-- **`{}&&` prefix on every stingray response.** This is Redfin's anti-CSRF measure — a literal four-byte prefix before the JSON body that would crash a naive `JSON.parse`. `RedfinClient.fetchStingrayJson` strips it. Don't try to parse stingray responses with `fetchJson` — it will fail.
+- **`{}&&` prefix on every stingray response.** This is Redfin's anti-CSRF measure — a literal four-byte prefix before the JSON body that would crash a naive `JSON.parse`. `RedfinClient.fetchStingrayJson` strips it; parsing a stingray response without going through that helper will fail.
 - **Envelope checks.** Stingray responses always wrap data in `{version, errorMessage, resultCode, payload}`. `fetchStingrayJson` throws on `resultCode !== 0`.
 - **Property-details takes two round trips.** The web app makes the same two calls: `initialInfo?path=<URL>` returns the propertyId+listingId, then `aboveTheFold?propertyId=…&listingId=…` returns the data. Pass `property_id`+`listing_id` directly to `redfin_get_property` to skip the first call.
 - **`property_id` alone resolves via the `/home/<id>` redirect (#89).** `initialInfo` will NOT resolve the bare `/home/<id>` path — it needs the full `/<STATE>/<City>/<Street>-<ZIP>/home/<id>` slug. So when a caller passes `property_id` with no `listing_id`/`url`, `RedfinClient.resolveCanonicalUrl(id)` GETs `/home/<id>`, lets the bridge follow Redfin's 301 to the canonical slug, and returns the redirected final URL (`FetchResult.url`); `resolveIds` then runs `initialInfo` on that slug. If the hop stays on the bare `/home/<id>` form (invalid/delisted id) it throws an actionable error. Used by `redfin_get_property` and `redfin_bulk_get`.

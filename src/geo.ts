@@ -28,6 +28,15 @@ export {
  * determination (non-US ZIP, no homes, empty states). Returns
  * `matched: false` only when we are CONFIDENT the result doesn't match.
  *
+ * Uses a STRICT-MAJORITY threshold rather than an any-one-match test: a
+ * result set is considered matched only when more than half of the
+ * (non-null) home states fall in the ZIP's plausible-state set. This
+ * mirrors the spirit of the homes-cohort silent-fallback guard
+ * (`assertRegionMatches`) — a single in-state home among a Seattle-heavy
+ * set is a poisoned cross-continent fallback (#46), not a legitimate
+ * match, so it must not flip the verdict to matched. A clean result with
+ * one stray out-of-state row still clears the majority and stays matched.
+ *
  * Built on realty-core's `zipPlausibleStates`; the `{ plausibleStates,
  * matched }` shape is redfin-specific — the search guard surfaces the
  * plausible-state set in its cross-continent-fallback error message.
@@ -38,13 +47,17 @@ export function homesMatchZipState(
 ): { plausibleStates: Set<string> | null; matched: boolean | null } {
   const plausible = zipPlausibleStates(zip);
   if (!plausible) return { plausibleStates: null, matched: null };
-  const seen = new Set<string>();
+  // Count per-home (not per-distinct-state): the threshold is "majority
+  // of the returned homes", so three WA homes outvote one NC home.
+  let total = 0;
+  let inState = 0;
   for (const s of homeStates) {
-    if (s) seen.add(s.toUpperCase());
+    if (!s) continue;
+    total++;
+    if (plausible.has(s.toUpperCase())) inState++;
   }
-  if (seen.size === 0) return { plausibleStates: plausible, matched: null };
-  for (const got of seen) if (plausible.has(got)) {
-    return { plausibleStates: plausible, matched: true };
-  }
-  return { plausibleStates: plausible, matched: false };
+  if (total === 0) return { plausibleStates: plausible, matched: null };
+  // Strict majority: more than half of the homes must be state-plausible.
+  const matched = inState * 2 > total;
+  return { plausibleStates: plausible, matched };
 }

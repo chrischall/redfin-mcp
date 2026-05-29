@@ -37,7 +37,6 @@ import type {
   FetchInit,
   FetchResult,
   RedfinTransport,
-  RequestJsonResult,
 } from './transport.js';
 
 // Re-exported so downstream callers (healthcheck, future tools) can
@@ -143,29 +142,6 @@ export class FetchproxyTransport implements RedfinTransport {
       bodyLen: response.body.length,
     });
     return { status: response.status, body: response.body, url: response.url };
-  }
-
-  /**
-   * 0.10.0+: delegate to the server's `requestJson`, which folds the
-   * serialize-body / JSON-header-default / 204-as-null / JSON.parse
-   * logic the client used to hand-roll. We always target the `www`
-   * subdomain (same as `fetch()`). The client keeps its per-site
-   * `throwIfNotOk` / sign-in guards over the returned `result`.
-   */
-  async requestJson<T>(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
-    path: string,
-    opts: { headers?: Record<string, string>; body?: unknown } = {}
-  ): Promise<RequestJsonResult<T>> {
-    const { data, result } = await this.inner.requestJson<T>(method, path, {
-      subdomain: 'www',
-      headers: opts.headers,
-      body: opts.body,
-    });
-    return {
-      data,
-      result: { status: result.status, body: result.body, url: result.url },
-    };
   }
 
   /**

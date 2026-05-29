@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { textResult, unwrapValue as unwrap } from '../mcp.js';
 import { redfinPhotoUrl } from './photos.js';
 
 /**
@@ -95,14 +95,6 @@ export function extractFavoritePropertyIds(html: string): number[] {
     if (!Number.isNaN(id)) seen.add(id);
   }
   return [...seen];
-}
-
-function unwrap<T>(x: T | { value?: T } | undefined): T | undefined {
-  if (x === undefined || x === null) return undefined;
-  if (typeof x === 'object' && 'value' in (x as object)) {
-    return (x as { value?: T }).value;
-  }
-  return x as T;
 }
 
 /**

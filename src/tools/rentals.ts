@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { textResult, unwrapValue as unwrap } from '../mcp.js';
 
 /**
  * Redfin's web app calls `/stingray/api/home/comparable-rentals` from
@@ -32,14 +32,6 @@ interface RawRentalComp {
 
 interface ComparableRentalsPayload {
   comparableRentals?: RawRentalComp[];
-}
-
-function unwrap<T>(x: T | { value?: T } | undefined): T | undefined {
-  if (x === undefined || x === null) return undefined;
-  if (typeof x === 'object' && 'value' in (x as object)) {
-    return (x as { value?: T }).value;
-  }
-  return x as T;
 }
 
 export interface FormattedRentalComp {

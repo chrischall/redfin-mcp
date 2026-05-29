@@ -4,6 +4,7 @@ import {
   InvalidPropertyUrlError,
   buildCanonicalUrl,
   extractPropertyIdFromUrl,
+  fetchAndFormatProperty,
   format,
   registerPropertyTools,
   resolveIds,
@@ -303,6 +304,98 @@ describe('format', () => {
     );
     expect(out.lot_size).toBeNull();
     expect(out.lot_size_acres).toBeNull();
+  });
+});
+
+describe('fetchAndFormatProperty (shared pipeline)', () => {
+  it('with IDs: fetches ATF + BTF in parallel and formats, folding BTF-derived fields', async () => {
+    // ATF then BTF (parallel, but mock resolves in registration order).
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          addressSectionInfo: {
+            streetAddress: '1 Main St',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+            beds: 3,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          propertyHistoryInfo: {
+            events: [
+              { eventDescription: 'Sold (MLS)', eventDate: 1_700_000_000_000, price: 450_000 },
+            ],
+          },
+          publicRecordsInfo: {
+            basicInfo: { lotSqFt: 43_560 }, // exactly 1 acre
+            taxInfo: { taxesDue: 5_200 },
+          },
+        },
+      });
+
+    const out = await fetchAndFormatProperty(mockClient, {
+      property_id: 7,
+      listing_id: 77,
+    });
+
+    // Both endpoints were hit.
+    expect(mockFetchStingrayJson).toHaveBeenCalledTimes(2);
+    expect(mockFetchStingrayJson.mock.calls[0][0]).toMatch(/aboveTheFold\?propertyId=7/);
+    expect(mockFetchStingrayJson.mock.calls[1][0]).toMatch(/belowTheFold\?propertyId=7/);
+
+    expect(out.btf).not.toBeNull();
+    expect(out.property).toBeDefined();
+    expect(out.property?.beds).toBe(3);
+    // BTF-derived fields folded into the formatted record.
+    expect(out.property?.last_sold_price).toBe(450_000);
+    expect(out.property?.lot_size).toBe(43_560);
+    expect(out.property?.lot_size_acres).toBe(1);
+    expect(out.property?.tax_annual).toBe(5_200);
+  });
+
+  it('withBelowTheFold: false skips BTF + format (photos path)', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: { streetAddress: '2 Oak Ave', beds: 2 },
+      },
+    });
+
+    const out = await fetchAndFormatProperty(
+      mockClient,
+      { property_id: 9, listing_id: 99 },
+      { withBelowTheFold: false }
+    );
+
+    // ONLY aboveTheFold — no belowTheFold call.
+    expect(mockFetchStingrayJson).toHaveBeenCalledTimes(1);
+    expect(mockFetchStingrayJson.mock.calls[0][0]).toMatch(/aboveTheFold/);
+    expect(out.btf).toBeNull();
+    expect(out.property).toBeUndefined();
+    expect(out.atf?.addressSectionInfo?.beds).toBe(2);
+  });
+
+  it('a BTF fetch failure degrades to btf: null without failing the row', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: { addressSectionInfo: { streetAddress: '3 Pine', beds: 1 } },
+      })
+      .mockRejectedValueOnce(new Error('BTF 500'));
+
+    const out = await fetchAndFormatProperty(mockClient, {
+      property_id: 5,
+      listing_id: 55,
+    });
+    expect(out.btf).toBeNull();
+    expect(out.property?.beds).toBe(1);
+    // BTF-derived fields fall back to null cleanly.
+    expect(out.property?.last_sold_price).toBeNull();
   });
 });
 

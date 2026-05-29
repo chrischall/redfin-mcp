@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { textResult, unwrapValue as v } from '../mcp.js';
 import { resolveBoth, type RedfinAddress } from '../autocomplete.js';
 import { buildPortalUrlHyperlink, priceDrop } from '../derived.js';
 import { extractZipFromLocation, homesMatchZipState } from '../geo.js';
@@ -114,15 +114,6 @@ export interface FormattedHome {
   longitude?: number;
   property_type?: number;
   days_on_redfin?: number;
-}
-
-/** Unwrap `{value: X}` envelope, or pass through raw values. */
-function v<T>(x: T | { value?: T } | undefined): T | undefined {
-  if (x === undefined || x === null) return undefined;
-  if (typeof x === 'object' && 'value' in (x as object)) {
-    return (x as { value?: T }).value;
-  }
-  return x as T;
 }
 
 export function formatHome(raw: RawHome): FormattedHome | null {

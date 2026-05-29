@@ -8,10 +8,7 @@ import {
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import {
-  buildCanonicalUrl,
-  format,
-  resolveIds,
-  type AboveTheFoldPayload,
+  fetchAndFormatProperty,
   type FormattedProperty,
 } from './properties.js';
 
@@ -77,53 +74,18 @@ async function fetchOne(
   includeDescription: boolean
 ): Promise<BulkPerProperty> {
   try {
-    const ids = await resolveIds(client, t);
-    const params = new URLSearchParams({
-      propertyId: String(ids.propertyId),
-      accessLevel: '1',
-      listingId: String(ids.listingId),
-    });
-    const [atfEnv, btf] = await Promise.all([
-      client.fetchStingrayJson<AboveTheFoldPayload>(
-        `/stingray/api/home/details/aboveTheFold?${params.toString()}`
-      ),
-      Promise.resolve(
-        client.fetchStingrayJson<{
-          propertyHistoryInfo?: {
-            events?: Array<{
-              eventDescription?: string;
-              eventDate?: number;
-              price?: number;
-            }>;
-          };
-          publicRecordsInfo?: {
-            basicInfo?: { lotSqFt?: number };
-            taxInfo?: { taxesDue?: number };
-          };
-        }>(`/stingray/api/home/details/belowTheFold?${params.toString()}`)
-      )
-        .then((e) => (e ? e.payload ?? null : null))
-        .catch(() => null),
-    ]);
-    const atf = atfEnv.payload ?? null;
-    const initial = ids.initial ?? {
-      propertyId: ids.propertyId,
-      listingId: ids.listingId,
-    };
-    const canonicalUrl = t.url
-      ? ids.canonicalUrl
-      : buildCanonicalUrl(atf?.addressSectionInfo, ids.propertyId) ??
-        ids.canonicalUrl;
+    // Shared resolveIds → parallel ATF/BTF → format pipeline (same one
+    // get_property + compare_properties use).
+    const { ids, canonicalUrl, property } = await fetchAndFormatProperty(
+      client,
+      t,
+      { includeDescription }
+    );
     return {
       property_id: ids.propertyId,
       url: canonicalUrl,
       status: 'ok',
-      property: format(initial, atf, canonicalUrl, {
-        includeDescription,
-        events: btf?.propertyHistoryInfo?.events,
-        taxAnnual: btf?.publicRecordsInfo?.taxInfo?.taxesDue,
-        lotSqFt: btf?.publicRecordsInfo?.basicInfo?.lotSqFt,
-      }),
+      property,
     };
   } catch (e) {
     // Swap the old ad-hoc `(e as Error).message` wrap for the cohort's
