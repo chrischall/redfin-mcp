@@ -74,9 +74,26 @@ describe('priceDrop', () => {
       price_drop_percent: null,
     });
   });
+  // CANONICAL DELTA (#35): realty-core's `priceDrop` returns `null` when
+  // there's no real drop (current >= previous). Redfin's old inline
+  // version returned a NEGATIVE `price_drop_amount` for a price RISE; the
+  // adapter now maps "no drop" to `{ null, null }` — semantically correct
+  // for a field named `price_drop_*` (a rise is not a drop).
+  it('DELTA: a price RISE yields both null (was a negative drop)', () => {
+    expect(priceDrop(500_000, 480_000)).toEqual({
+      price_drop_amount: null,
+      price_drop_percent: null,
+    });
+  });
+  it('DELTA: an unchanged price yields both null', () => {
+    expect(priceDrop(500_000, 500_000)).toEqual({
+      price_drop_amount: null,
+      price_drop_percent: null,
+    });
+  });
 });
 
-describe('cleanTaxAnnual', () => {
+describe('cleanTaxAnnual (realty-core re-export)', () => {
   it('null raw → both null', () => {
     expect(cleanTaxAnnual(undefined)).toEqual({ tax_annual: null, tax_status: null });
   });
@@ -85,6 +102,19 @@ describe('cleanTaxAnnual', () => {
   });
   it('1 → not_yet_assessed sentinel', () => {
     expect(cleanTaxAnnual(1)).toEqual({ tax_annual: null, tax_status: 'not_yet_assessed' });
+  });
+  // CANONICAL DELTA (#36): realty-core widened the sentinel threshold
+  // from redfin's `=== 0 || === 1` to `< 10` (calibrated by homes-mcp
+  // against real new-build listings returning tax_annual 2–9). 2–9 are
+  // now treated as not-yet-assessed placeholders rather than real bills.
+  it('DELTA: 5 → not_yet_assessed (was a real bill under the old 0/1 guard)', () => {
+    expect(cleanTaxAnnual(5)).toEqual({ tax_annual: null, tax_status: 'not_yet_assessed' });
+  });
+  it('DELTA: 9 → not_yet_assessed (top of the placeholder band)', () => {
+    expect(cleanTaxAnnual(9)).toEqual({ tax_annual: null, tax_status: 'not_yet_assessed' });
+  });
+  it('DELTA: 10 → real value (threshold boundary, exclusive)', () => {
+    expect(cleanTaxAnnual(10)).toEqual({ tax_annual: 10, tax_status: null });
   });
   it('real value passes through', () => {
     expect(cleanTaxAnnual(5400)).toEqual({ tax_annual: 5400, tax_status: null });
@@ -186,5 +216,20 @@ describe('lastSold', () => {
       lastSold([{ eventDescription: 'SOLD', eventDate: 1_700_000_000_000, price: 100 }])
         .last_sold_price
     ).toBe(100);
+  });
+  it('matches "Closed" via the shared mapper (Sold synonym)', () => {
+    expect(
+      lastSold([{ eventDescription: 'Closed', eventDate: 1_700_000_000_000, price: 250 }])
+        .last_sold_price
+    ).toBe(250);
+  });
+  // CANONICAL DELTA (#48): redfin's old `lastSold` used a raw `/sold/i`
+  // substring test, so "Foreclosed" false-matched as a Sold event. The
+  // adapter now classifies via realty-core's `mapEventType`, whose
+  // `\bclosed\b` word-boundary means "Foreclosed" → Unknown → not a sale.
+  it('DELTA: "Foreclosed" is NOT treated as a Sold event', () => {
+    expect(
+      lastSold([{ eventDescription: 'Foreclosed', eventDate: 1_700_000_000_000, price: 999 }])
+    ).toEqual({ last_sold_date: null, last_sold_price: null });
   });
 });

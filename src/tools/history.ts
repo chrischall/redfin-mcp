@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { mapEventType, type NormalizedEventType } from '@chrischall/realty-core';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import {
@@ -7,6 +8,18 @@ import {
   resolveIds,
   type AboveTheFoldPayload,
 } from './properties.js';
+
+// Re-exported so existing consumers (and tests) keep importing the shared
+// event taxonomy + mapper from this module. Both now live canonically in
+// `@chrischall/realty-core` (cohort migration realty-mcp#1).
+//
+// CANONICAL DELTA (#48): realty-core's `mapEventType` is a superset of
+// redfin's old inline mapper — same output for every Redfin event string
+// — but it word-boundary-anchors `\bactive\b` / `\bclosed\b` (so
+// "Inactive" no longer maps to Listed and "Foreclosed" no longer maps to
+// Sold) and adds the wider cohort synonym set (coming soon / new listing
+// / for sale / off market / expired / price drop, …).
+export { mapEventType, type NormalizedEventType };
 
 /**
  * Redfin's price + tax history lives in the `belowTheFold` endpoint,
@@ -69,22 +82,6 @@ export interface FormattedPriceEvent {
   source_id?: string;
 }
 
-/**
- * Shared normalized event type — same enum used across sibling MCPs
- * (zillow, compass, onehome, homes-com) so downstream code doesn't
- * need per-MCP adapters. See issue #48.
- */
-export type NormalizedEventType =
-  | 'Listed'
-  | 'PriceChange'
-  | 'Pending'
-  | 'Contingent'
-  | 'Sold'
-  | 'Withdrawn'
-  | 'Relisted'
-  | 'Delisted'
-  | 'Unknown';
-
 export interface NormalizedEvent {
   date?: string;
   type: NormalizedEventType;
@@ -97,30 +94,6 @@ export interface NormalizedEvent {
   price_change_pct?: number;
   dom?: number;
   source_mls?: string;
-}
-
-/**
- * Map Redfin's free-text `eventDescription` to the shared enum. Order
- * matters — "Listed" matches BOTH "Listed" and "Relisted", so the
- * Relisted check must come first. Same for "Sold (MLS)" / "Sold
- * (Public Records)" → "Sold".
- *
- * The mapping is intentionally generous: any input we can't classify
- * returns `"Unknown"`, and the original string remains in
- * `raw_event` for callers who want it.
- */
-export function mapEventType(description: string | undefined): NormalizedEventType {
-  if (!description) return 'Unknown';
-  const d = description.toLowerCase();
-  if (/relist/.test(d)) return 'Relisted';
-  if (/withdraw/.test(d)) return 'Withdrawn';
-  if (/delist/.test(d)) return 'Delisted';
-  if (/sold/.test(d)) return 'Sold';
-  if (/pending/.test(d)) return 'Pending';
-  if (/contingent/.test(d)) return 'Contingent';
-  if (/price (?:change|reduction|increase|reduced)/.test(d)) return 'PriceChange';
-  if (/listed/.test(d)) return 'Listed';
-  return 'Unknown';
 }
 
 /**
