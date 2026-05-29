@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import {
+  FetchproxyTimeoutError,
+  FetchproxyBridgeDownError,
+  FetchproxyProtocolError,
+} from '@fetchproxy/server';
 import type { RedfinClient } from '../../src/client.js';
 import { registerBulkGetTools } from '../../src/tools/bulk-get.js';
 import { createTestHarness, parseToolResult } from '../helpers.js';
@@ -67,14 +72,129 @@ describe('redfin_bulk_get tool', () => {
       count: number;
       ok: number;
       errored: number;
-      results: Array<{ error?: string; property?: { price: number } }>;
+      results: Array<{
+        error?: string;
+        status?: string;
+        retryable?: boolean;
+        property?: { price: number };
+      }>;
     }>(r);
     expect(parsed.count).toBe(3);
     expect(parsed.ok).toBe(2);
     expect(parsed.errored).toBe(1);
     expect(parsed.results[0].property?.price).toBe(100_000);
     expect(parsed.results[1].error).toMatch(/boom/);
+    // A plain Error (not a fetchproxy typed error) is a genuine-miss-style
+    // outcome: classified as 'other', not retryable.
+    expect(parsed.results[1].status).toBe('other');
+    expect(parsed.results[1].retryable).toBe(false);
     expect(parsed.results[2].property?.price).toBe(300_000);
+  });
+
+  it('classifies a bridge timeout row as status=timeout, retryable=true (#78)', async () => {
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.includes('aboveTheFold')) {
+        throw new FetchproxyTimeoutError({
+          url: 'https://www.redfin.com/stingray/api/home/details/aboveTheFold',
+          timeoutMs: 30_000,
+        });
+      }
+      return { resultCode: 0, payload: {} };
+    });
+    const r = await harness.callTool('redfin_bulk_get', {
+      targets: [{ property_id: 1, listing_id: 10 }],
+    });
+    const parsed = parseToolResult<{
+      ok: number;
+      errored: number;
+      results: Array<{ error?: string; status?: string; retryable?: boolean }>;
+    }>(r);
+    expect(parsed.ok).toBe(0);
+    expect(parsed.errored).toBe(1);
+    expect(parsed.results[0].status).toBe('timeout');
+    expect(parsed.results[0].retryable).toBe(true);
+    // The standardized cohort wrapper string — must stay distinguishable
+    // from "no listing found".
+    expect(parsed.results[0].error).toMatch(/bridge timeout after retry/);
+  });
+
+  it('classifies a bridge-down row as status=bridge_down, retryable=true (#78)', async () => {
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.includes('aboveTheFold')) {
+        throw new FetchproxyBridgeDownError({
+          originalError: 'content_script_unreachable',
+          retryAttempted: true,
+        });
+      }
+      return { resultCode: 0, payload: {} };
+    });
+    const r = await harness.callTool('redfin_bulk_get', {
+      targets: [{ property_id: 1, listing_id: 10 }],
+    });
+    const parsed = parseToolResult<{
+      ok: number;
+      errored: number;
+      results: Array<{ error?: string; status?: string; retryable?: boolean }>;
+    }>(r);
+    expect(parsed.ok).toBe(0);
+    expect(parsed.errored).toBe(1);
+    expect(parsed.results[0].status).toBe('bridge_down');
+    expect(parsed.results[0].retryable).toBe(true);
+    expect(parsed.results[0].error).toMatch(/bridge unreachable/);
+  });
+
+  it('classifies a protocol-error row as status=protocol, retryable=false (#78)', async () => {
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.includes('aboveTheFold')) {
+        throw new FetchproxyProtocolError('no_tab: no signed-in redfin.com tab');
+      }
+      return { resultCode: 0, payload: {} };
+    });
+    const r = await harness.callTool('redfin_bulk_get', {
+      targets: [{ property_id: 1, listing_id: 10 }],
+    });
+    const parsed = parseToolResult<{
+      ok: number;
+      errored: number;
+      results: Array<{ error?: string; status?: string; retryable?: boolean }>;
+    }>(r);
+    expect(parsed.ok).toBe(0);
+    expect(parsed.errored).toBe(1);
+    expect(parsed.results[0].status).toBe('protocol');
+    expect(parsed.results[0].retryable).toBe(false);
+    // protocol -> bare message, no wrapper prefix.
+    expect(parsed.results[0].error).toBe('no_tab: no signed-in redfin.com tab');
+  });
+
+  it('tags successful rows with status=ok (#78)', async () => {
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.includes('aboveTheFold')) {
+        return {
+          resultCode: 0,
+          payload: {
+            addressSectionInfo: {
+              streetAddress: '1 Main St',
+              city: 'X',
+              state: 'NC',
+              zip: '28746',
+              latestPriceInfo: { amount: 100_000 },
+            },
+          },
+        };
+      }
+      return { resultCode: 0, payload: {} };
+    });
+    const r = await harness.callTool('redfin_bulk_get', {
+      targets: [{ property_id: 1, listing_id: 10 }],
+    });
+    const parsed = parseToolResult<{
+      ok: number;
+      results: Array<{ status?: string; retryable?: boolean; error?: string }>;
+    }>(r);
+    expect(parsed.ok).toBe(1);
+    expect(parsed.results[0].status).toBe('ok');
+    expect(parsed.results[0].error).toBeUndefined();
+    expect(parsed.results[0].retryable).toBeUndefined();
   });
 
   it('threads lotSqFt from the BTF payload into lot_size + lot_size_acres (#83 review)', async () => {
@@ -187,12 +307,21 @@ describe('redfin_bulk_get tool', () => {
     const parsed = parseToolResult<{
       ok: number;
       errored: number;
-      results: Array<{ error?: string; property_id?: number }>;
+      results: Array<{
+        error?: string;
+        property_id?: number;
+        status?: string;
+        retryable?: boolean;
+      }>;
     }>(r);
     expect(parsed.ok).toBe(0);
     expect(parsed.errored).toBe(1);
     expect(parsed.results[0].property_id).toBe(999);
     expect(parsed.results[0].error).toMatch(/could not be resolved/);
+    // Genuine miss preserved: a plain resolution failure is 'other' and
+    // NOT retryable — must never be confused with a transient timeout.
+    expect(parsed.results[0].status).toBe('other');
+    expect(parsed.results[0].retryable).toBe(false);
   });
 
   it('caps targets at 200', async () => {

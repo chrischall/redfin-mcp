@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   BRIDGE_CONCURRENCY,
+  classifyRowError,
   mapWithConcurrency,
 } from '@fetchproxy/server';
 import type { RedfinClient } from '../client.js';
@@ -39,12 +40,36 @@ interface BulkTarget {
   listing_id?: number;
 }
 
+/**
+ * Per-row outcome status. `'ok'` for a fetched property; otherwise the
+ * `classifyRowError` kind so the cohort's "20-of-20 with X timeouts"
+ * summary reporting can branch without re-parsing the message string.
+ */
+type BulkRowStatus = 'ok' | 'timeout' | 'bridge_down' | 'protocol' | 'other';
+
 interface BulkPerProperty {
   property_id?: number;
   url: string;
+  /** Row outcome. Always present so callers never infer it from `error`. */
+  status: BulkRowStatus;
   property?: FormattedProperty;
   error?: string;
+  /**
+   * Whether re-issuing this exact row could plausibly succeed. Only set
+   * on error rows — `'timeout'`/`'bridge_down'` are transient bridge
+   * conditions (true); `'protocol'`/`'other'` (including a genuine "no
+   * listing found" miss) are not (false).
+   */
+  retryable?: boolean;
 }
+
+/**
+ * `classifyRowError` kinds that are transient bridge conditions worth a
+ * caller-side retry. `protocol` (no_tab / domain_denied) and `other`
+ * (genuine misses, programmer errors) are structural — re-issuing the
+ * same row won't change the outcome.
+ */
+const RETRYABLE_ROW_KINDS = new Set(['timeout', 'bridge_down']);
 
 async function fetchOne(
   client: RedfinClient,
@@ -92,6 +117,7 @@ async function fetchOne(
     return {
       property_id: ids.propertyId,
       url: canonicalUrl,
+      status: 'ok',
       property: format(initial, atf, canonicalUrl, {
         includeDescription,
         events: btf?.propertyHistoryInfo?.events,
@@ -100,10 +126,18 @@ async function fetchOne(
       }),
     };
   } catch (e) {
+    // Swap the old ad-hoc `(e as Error).message` wrap for the cohort's
+    // typed classifier (fetchproxy 0.10.0). It hands back both the kind
+    // — so the batch summary can keep timeouts distinguishable from a
+    // genuine "no listing found" miss (round-3 #78) — and the
+    // standardized user-facing message string the cohort settled on.
+    const { kind, message } = classifyRowError(e);
     return {
       property_id: t.property_id,
       url: t.url ?? '',
-      error: (e as Error).message,
+      status: kind,
+      retryable: RETRYABLE_ROW_KINDS.has(kind),
+      error: message,
     };
   }
 }
@@ -172,7 +206,7 @@ export function registerBulkGetTools(
         BRIDGE_CONCURRENCY,
         (t) => fetchOne(client, t, include_description === true)
       );
-      const ok = results.filter((r) => !r.error).length;
+      const ok = results.filter((r) => r.status === 'ok').length;
       const errored = results.length - ok;
       return textResult({
         count: results.length,
