@@ -39,8 +39,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@chrischall/realty-core": "^0.4.0",
-    "@fetchproxy/server": "^0.10.0",
+    "@chrischall/realty-core": "^0.4.1",
+    "@fetchproxy/server": "^0.11.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "dotenv": "^17.4.2",
     "zod": "^4.4.3"
