@@ -33,7 +33,7 @@ import { registerBulkGetTools } from './tools/bulk-get.js';
 import { registerResolveAddressesTools } from './tools/resolve-addresses.js';
 import { registerSessionTools } from './tools/sessions.js';
 
-const VERSION = '0.7.0'; // x-release-please-version
+const VERSION = '0.8.0'; // x-release-please-version
 
 const port = process.env.REDFIN_WS_PORT
   ? Number(process.env.REDFIN_WS_PORT)
