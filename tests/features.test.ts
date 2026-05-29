@@ -73,6 +73,15 @@ describe('extractFeatures', () => {
     it('returns "unknown" when basement is mentioned but no qualifier', () => {
       expect(extractFeatures('Basement is included.', communities).basement).toBe('unknown');
     });
+    it('PIN (canonical connector): "basement with finished oak shelving" is NOT finished', () => {
+      // The canonical BASEMENT_CONNECTOR (is/was/are/were/—/–/,/;/:/( only)
+      // rejects the free-floating "with", so the *shelving* being finished
+      // no longer false-positives the *basement* to "finished". The older
+      // loose `[^.!?]{0,30}?` window incorrectly returned "finished" here.
+      expect(
+        extractFeatures('Basement with finished oak shelving.', communities).basement
+      ).toBe('unknown');
+    });
     it('returns null when no basement mention', () => {
       expect(extractFeatures('No mention here.', communities).basement).toBeNull();
     });
@@ -135,14 +144,20 @@ describe('extractFeatures', () => {
     it('returns null when no dock mention', () => {
       expect(extractFeatures('No water access.', communities).dock).toBeNull();
     });
-    it('does NOT misclassify place-name "Marina" suffixes as a dock (false-positive pin)', () => {
+    it('matches "marina" anywhere (canonical naked \\bmarina\\b — no place-name lookahead)', () => {
+      // DELTA: redfin's old inline DOCK_MARINA_RE carried a negative
+      // lookahead for place-name suffixes (del/bay/dr/drive/...), so
+      // "123 Marina Dr" / "Marina Bay" / "Marina del Rey" returned null.
+      // The canonical realty-core detector uses a naked `\bmarina\b`, so
+      // those now classify as "marina". The local refinement is dropped
+      // by design — consuming the canonical helper, not re-implementing it.
       expect(
         extractFeatures('Property at 123 Marina Dr with sweeping views.', communities).dock
-      ).toBeNull();
-      expect(extractFeatures('Just south of Marina Bay.', communities).dock).toBeNull();
-      expect(extractFeatures('Marina del Rey area.', communities).dock).toBeNull();
+      ).toBe('marina');
+      expect(extractFeatures('Just south of Marina Bay.', communities).dock).toBe('marina');
+      expect(extractFeatures('Marina del Rey area.', communities).dock).toBe('marina');
     });
-    it('still matches "marina" as a dock signal when not followed by a place-suffix', () => {
+    it('still matches "marina" as a dock signal in a real dock context', () => {
       expect(extractFeatures('Marina slip included.', communities).dock).toBe('marina');
     });
   });
