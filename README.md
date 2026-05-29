@@ -9,7 +9,7 @@ Redfin real-estate access as an MCP server for Claude — search listings, fetch
 | Tool | Purpose | Auth-scoped |
 | --- | --- | :---: |
 | `redfin_search_properties` | Search listings by location, price band, beds/baths, home type. Resolves free-text via Redfin's autocomplete then queries the `gis` API. | |
-| `redfin_get_property` | Full record for a property by URL or `property_id`+`listing_id`. Address, beds/baths, sqft, year built, price, status, days on market, primary photo. | |
+| `redfin_get_property` | Full record for a property by URL, `property_id` alone, or `property_id`+`listing_id`. Address, beds/baths, sqft, year built, price, status, days on market, primary photo. | |
 | `redfin_get_property_photos` | Full photo gallery for a property — every CDN image at fullscreen/large/medium sizes plus thumbnails and captions. | |
 | `redfin_get_market_report` | Median sale/list prices, ZHVI YoY, average days on market, inventory for a region. | |
 | `redfin_get_price_history` | Listing-history and tax-roll events for a property — Listed/Sold/Pending entries plus annual assessed values and taxes paid. | |

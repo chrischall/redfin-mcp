@@ -87,6 +87,40 @@ export class RedfinClient {
   }
 
   /**
+   * Recover a property's canonical homedetails URL from its propertyId
+   * alone (issue #89). Redfin's short `/home/<propertyId>` URL 301s to
+   * the full `/<STATE>/<City>/<Street>-<ZIP>/home/<id>` slug; the bridge
+   * fetch follows that redirect, so the response's final URL is the
+   * canonical form we need. The Stingray `initialInfo` endpoint will not
+   * resolve the bare `/home/<id>` path, so this redirect-follow is the
+   * way to derive the slug server-side.
+   *
+   * Throws `SessionNotAuthenticatedError` if the hop lands on the sign-in
+   * interstitial, or a hint-laden error if no redirect happened (the
+   * propertyId is invalid/delisted and stayed on the bare `/home/<id>`
+   * form).
+   */
+  async resolveCanonicalUrl(propertyId: number): Promise<string> {
+    const path = `/home/${propertyId}`;
+    const result = await this.transport.fetch({ path, method: 'GET' });
+    this.throwIfNotOk(result, 'GET', path);
+    this.throwIfSignInPage(result);
+    // A successful resolve redirects off the bare /home/<id> form onto the
+    // /<STATE>/<City>/<Street>-<ZIP>/home/<id> slug. If the final URL is
+    // still the short form, the id never resolved. Anchor to the start so
+    // the canonical slug's trailing /home/<id> segment doesn't match.
+    if (/^\/home\/\d+\/?$/.test(new URL(result.url).pathname)) {
+      throw new Error(
+        `Redfin property_id ${propertyId} could not be resolved from its id alone — ` +
+          `the short /home/${propertyId} URL did not redirect to a canonical listing page. ` +
+          `The id may be invalid or the listing delisted. Pass the full Redfin homedetails ` +
+          `URL (with the /<STATE>/<City>/<Street>-<ZIP>/home/<id> slug) or property_id + listing_id instead.`
+      );
+    }
+    return result.url;
+  }
+
+  /**
    * POST/PUT/DELETE a JSON body, return the parsed JSON. Throws on
    * non-2xx, invalid JSON, or sign-in page.
    */

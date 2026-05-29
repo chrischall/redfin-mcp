@@ -201,4 +201,62 @@ describe('RedfinClient', () => {
     });
     expect(await client.fetchJson('/x', { method: 'POST', body: {} })).toBeNull();
   });
+
+  describe('resolveCanonicalUrl', () => {
+    it('GETs /home/<id> and returns the redirected canonical slug URL', async () => {
+      const client = new RedfinClient({
+        transport: stubTransport(async (init) => {
+          expect(init.method).toBe('GET');
+          expect(init.path).toBe('/home/12345');
+          return {
+            status: 200,
+            body: '<html>home page</html>',
+            // Browser fetch followed Redfin's /home/<id> -> canonical redirect.
+            url: 'https://www.redfin.com/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345',
+          };
+        }),
+      });
+      expect(await client.resolveCanonicalUrl(12345)).toBe(
+        'https://www.redfin.com/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345'
+      );
+    });
+
+    it('throws SessionNotAuthenticatedError when /home/<id> redirects to /login', async () => {
+      const client = new RedfinClient({
+        transport: stubTransport(async () => ({
+          status: 200,
+          body: '<html>login</html>',
+          url: 'https://www.redfin.com/login',
+        })),
+      });
+      await expect(client.resolveCanonicalUrl(12345)).rejects.toBeInstanceOf(
+        SessionNotAuthenticatedError
+      );
+    });
+
+    it('throws a hint-laden error when no redirect occurred (still the bare /home/<id> form)', async () => {
+      const client = new RedfinClient({
+        transport: stubTransport(async () => ({
+          status: 200,
+          body: '<html>not found</html>',
+          // No slug — redirect did not resolve (invalid/delisted id).
+          url: 'https://www.redfin.com/home/12345',
+        })),
+      });
+      await expect(client.resolveCanonicalUrl(12345)).rejects.toThrow(
+        /could not be resolved/
+      );
+    });
+
+    it('throws for a non-2xx status', async () => {
+      const client = new RedfinClient({
+        transport: stubTransport(async () => ({
+          status: 404,
+          body: 'nope',
+          url: 'https://www.redfin.com/home/12345',
+        })),
+      });
+      await expect(client.resolveCanonicalUrl(12345)).rejects.toThrow(/404/);
+    });
+  });
 });

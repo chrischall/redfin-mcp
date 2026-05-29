@@ -4,8 +4,10 @@ import { registerBulkGetTools } from '../../src/tools/bulk-get.js';
 import { createTestHarness, parseToolResult } from '../helpers.js';
 
 const mockFetchStingrayJson = vi.fn();
+const mockResolveCanonicalUrl = vi.fn();
 const mockClient = {
   fetchStingrayJson: mockFetchStingrayJson,
+  resolveCanonicalUrl: mockResolveCanonicalUrl,
 } as unknown as RedfinClient;
 
 let harness: Awaited<ReturnType<typeof createTestHarness>>;
@@ -123,6 +125,74 @@ describe('redfin_bulk_get tool', () => {
     // Condo: absent lotSqFt -> both null, never 0.
     expect(parsed.results[1].property?.lot_size ?? null).toBeNull();
     expect(parsed.results[1].property?.lot_size_acres ?? null).toBeNull();
+  });
+
+  it('resolves a target from property_id alone via redirect + initialInfo (#89)', async () => {
+    mockResolveCanonicalUrl.mockResolvedValue(
+      'https://www.redfin.com/NC/Lake-Lure/268-Mallard-Rd-28746/home/777'
+    );
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.includes('initialInfo')) {
+        return { resultCode: 0, payload: { propertyId: 777, listingId: 888 } };
+      }
+      if (path.includes('aboveTheFold')) {
+        return {
+          resultCode: 0,
+          payload: {
+            addressSectionInfo: {
+              streetAddress: '268 Mallard Rd',
+              city: 'Lake Lure',
+              state: 'NC',
+              zip: '28746',
+              latestPriceInfo: { amount: 599_000 },
+            },
+          },
+        };
+      }
+      // BTF
+      return { resultCode: 0, payload: {} };
+    });
+    const r = await harness.callTool('redfin_bulk_get', {
+      targets: [{ property_id: 777 }],
+    });
+    expect(r.isError).toBeFalsy();
+    const parsed = parseToolResult<{
+      ok: number;
+      errored: number;
+      results: Array<{
+        error?: string;
+        property_id?: number;
+        url: string;
+        property?: { price: number; listing_id: number };
+      }>;
+    }>(r);
+    expect(mockResolveCanonicalUrl).toHaveBeenCalledWith(777);
+    expect(parsed.ok).toBe(1);
+    expect(parsed.errored).toBe(0);
+    expect(parsed.results[0].property?.price).toBe(599_000);
+    expect(parsed.results[0].property?.listing_id).toBe(888);
+    expect(parsed.results[0].url).toBe(
+      'https://www.redfin.com/NC/Lake-Lure/268-Mallard-Rd-28746/home/777'
+    );
+  });
+
+  it('captures a per-row error when property_id alone cannot be resolved (#89)', async () => {
+    mockResolveCanonicalUrl.mockRejectedValue(
+      new Error('Redfin property_id 999 could not be resolved from its id alone')
+    );
+    const r = await harness.callTool('redfin_bulk_get', {
+      targets: [{ property_id: 999 }],
+    });
+    expect(r.isError).toBeFalsy();
+    const parsed = parseToolResult<{
+      ok: number;
+      errored: number;
+      results: Array<{ error?: string; property_id?: number }>;
+    }>(r);
+    expect(parsed.ok).toBe(0);
+    expect(parsed.errored).toBe(1);
+    expect(parsed.results[0].property_id).toBe(999);
+    expect(parsed.results[0].error).toMatch(/could not be resolved/);
   });
 
   it('caps targets at 200', async () => {
