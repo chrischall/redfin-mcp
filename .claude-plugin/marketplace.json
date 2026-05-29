@@ -7,7 +7,7 @@
   },
   "metadata": {
     "description": "MCP server for Redfin — search listings, fetch property details, market reports, saved homes. Routes through the user signed-in redfin.com tab via the fetchproxy browser extension to dodge bot detection.",
-    "version": "0.8.0"
+    "version": "0.9.0"
   },
   "plugins": [
     {
@@ -15,7 +15,7 @@
       "displayName": "Redfin",
       "source": "./",
       "description": "MCP server for Redfin — search listings, get property details, market reports, saved homes",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "author": {
         "name": "Chris Hall"
       },

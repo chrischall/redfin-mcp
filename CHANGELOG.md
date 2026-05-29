@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.0](https://github.com/chrischall/redfin-mcp/compare/v0.8.0...v0.9.0) (2026-05-29)
+
+
+### Features
+
+* adopt @fetchproxy/server 0.11.0 + @chrischall/realty-core 0.4.1 ([#96](https://github.com/chrischall/redfin-mcp/issues/96)) ([1790198](https://github.com/chrischall/redfin-mcp/commit/1790198c2177609976799e2935c6662bf73ffedc))
+* resolve redfin_bulk_get and get_property from property_id alone ([#90](https://github.com/chrischall/redfin-mcp/issues/90)) ([b8f1c08](https://github.com/chrischall/redfin-mcp/commit/b8f1c081df1857c374a7717d116e2585d0b5aed4))
+
+
+### Bug Fixes
+
+* **ci:** arm auto-merge from verdict comment when structured_output is empty ([#94](https://github.com/chrischall/redfin-mcp/issues/94)) ([b4a494e](https://github.com/chrischall/redfin-mcp/commit/b4a494e7d53b4d962858d3b9558e2e24921d1692))
+* **ci:** treat instant-merge race as success in auto-merge arm ([#93](https://github.com/chrischall/redfin-mcp/issues/93)) ([104e218](https://github.com/chrischall/redfin-mcp/commit/104e218b6912791d781495f49e282f557506aa12))
+* classify bulk-get per-row errors via classifyRowError ([#92](https://github.com/chrischall/redfin-mcp/issues/92)) ([91c1942](https://github.com/chrischall/redfin-mcp/commit/91c1942c4821177510e8e452da27c145fdfd50fc))
+
 ## [0.8.0](https://github.com/chrischall/redfin-mcp/compare/v0.7.0...v0.8.0) (2026-05-29)
 
 
