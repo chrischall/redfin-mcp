@@ -323,6 +323,11 @@ describe('mapEventType (#48 shared enum)', () => {
     expect(mapEventType('Off Market')).toBe('Delisted');
     expect(mapEventType('Price Drop')).toBe('PriceChange');
   });
+
+  it('maps "completed" sale events to Sold', () => {
+    expect(mapEventType('Sale Completed')).toBe('Sold');
+    expect(mapEventType('Completed')).toBe('Sold');
+  });
 });
 
 describe('normalizeEvents (#48 cross-MCP shape)', () => {

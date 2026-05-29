@@ -144,21 +144,25 @@ describe('extractFeatures', () => {
     it('returns null when no dock mention', () => {
       expect(extractFeatures('No water access.', communities).dock).toBeNull();
     });
-    it('matches "marina" anywhere (canonical naked \\bmarina\\b — no place-name lookahead)', () => {
-      // DELTA: redfin's old inline DOCK_MARINA_RE carried a negative
-      // lookahead for place-name suffixes (del/bay/dr/drive/...), so
-      // "123 Marina Dr" / "Marina Bay" / "Marina del Rey" returned null.
-      // The canonical realty-core detector uses a naked `\bmarina\b`, so
-      // those now classify as "marina". The local refinement is dropped
-      // by design — consuming the canonical helper, not re-implementing it.
+    it('guards "marina" place-names — Marina Dr/Bay/del Rey do NOT classify as a dock', () => {
+      // The canonical realty-core detector matches `marina` only as a
+      // water-access dock signal, not as part of a place name. Its regex
+      //   /\bmarina\b(?!\s+(?:del|bay|dr|drive|blvd|boulevard|st|street|ave|avenue))/i
+      // carries a negative lookahead for place-name suffixes, so
+      // "123 Marina Dr" / "Marina Bay" / "Marina del Rey" return null
+      // rather than a spurious 'marina' dock feature. This is the
+      // canonical guarded behavior redfin originally shipped.
       expect(
         extractFeatures('Property at 123 Marina Dr with sweeping views.', communities).dock
-      ).toBe('marina');
-      expect(extractFeatures('Just south of Marina Bay.', communities).dock).toBe('marina');
-      expect(extractFeatures('Marina del Rey area.', communities).dock).toBe('marina');
+      ).toBeNull();
+      expect(extractFeatures('Just south of Marina Bay.', communities).dock).toBeNull();
+      expect(extractFeatures('Marina del Rey area.', communities).dock).toBeNull();
     });
     it('still matches "marina" as a dock signal in a real dock context', () => {
       expect(extractFeatures('Marina slip included.', communities).dock).toBe('marina');
+      expect(
+        extractFeatures('Deep-water marina with boat access.', communities).dock
+      ).toBe('marina');
     });
   });
 
