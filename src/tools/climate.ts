@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { mapWithConcurrency } from '@fetchproxy/server';
+import { mapWithConcurrency } from '@chrischall/mcp-utils/fetchproxy';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import { urlToPath } from '../url.js';
