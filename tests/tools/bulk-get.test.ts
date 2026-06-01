@@ -3,7 +3,7 @@ import {
   FetchproxyTimeoutError,
   FetchproxyBridgeDownError,
   FetchproxyProtocolError,
-} from '@fetchproxy/server';
+} from '@chrischall/mcp-utils/fetchproxy';
 import type { RedfinClient } from '../../src/client.js';
 import { registerBulkGetTools } from '../../src/tools/bulk-get.js';
 import { createTestHarness, parseToolResult } from '../helpers.js';
@@ -21,8 +21,9 @@ afterAll(async () => {
   if (harness) await harness.close();
 });
 
-// `mapWithConcurrency` lives in `@fetchproxy/server` (0.9.x+) and is
-// unit-tested there. We only test redfin-side tool behaviors here.
+// `mapWithConcurrency` lives in `@chrischall/mcp-utils/fetchproxy` (which
+// re-exports the fetchproxy bridge surface) and is unit-tested upstream.
+// We only test redfin-side tool behaviors here.
 
 describe('redfin_bulk_get tool', () => {
   it('setup', async () => {

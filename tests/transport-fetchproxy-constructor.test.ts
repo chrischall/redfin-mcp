@@ -1,17 +1,18 @@
 // Constructor-options tests for FetchproxyTransport. Split out from
 // transport-fetchproxy.test.ts because asserting on the options object
 // passed to `new FetchproxyServer(...)` requires a hoisted vi.mock of
-// '@fetchproxy/server', which would otherwise interfere with the
+// '@chrischall/mcp-utils/fetchproxy' (the subpath the adapter now imports
+// FetchproxyServer from), which would otherwise interfere with the
 // installInner() stubbing pattern used by the main suite.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { FetchproxyServerOpts } from '@fetchproxy/server';
+import type { FetchproxyServerOpts } from '@chrischall/mcp-utils/fetchproxy';
 
 const constructorCalls: FetchproxyServerOpts[] = [];
 
-vi.mock('@fetchproxy/server', async () => {
+vi.mock('@chrischall/mcp-utils/fetchproxy', async () => {
   const actual =
-    await vi.importActual<typeof import('@fetchproxy/server')>(
-      '@fetchproxy/server'
+    await vi.importActual<typeof import('@chrischall/mcp-utils/fetchproxy')>(
+      '@chrischall/mcp-utils/fetchproxy'
     );
   class MockFetchproxyServer {
     public role: string | null = 'mock';

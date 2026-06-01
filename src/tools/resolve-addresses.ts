@@ -3,7 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   BRIDGE_CONCURRENCY,
   mapWithConcurrency,
-} from '@fetchproxy/server';
+} from '@chrischall/mcp-utils/fetchproxy';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import {

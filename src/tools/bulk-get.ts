@@ -4,7 +4,7 @@ import {
   BRIDGE_CONCURRENCY,
   classifyRowError,
   mapWithConcurrency,
-} from '@fetchproxy/server';
+} from '@chrischall/mcp-utils/fetchproxy';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import {
@@ -22,7 +22,7 @@ import {
  * errors are captured per-row so a single bad ID doesn't fail the
  * batch. ATF + BTF are fetched in parallel per target (same pipeline
  * as get_property), and targets themselves are fanned out concurrently
- * via `mapWithConcurrency` from `@fetchproxy/server` (cap pinned at
+ * via `mapWithConcurrency` from `@chrischall/mcp-utils/fetchproxy` (cap pinned at
  * {@link BRIDGE_CONCURRENCY}=6 — the round-3 cohort comparison value)
  * to avoid hammering Redfin.
  *

@@ -34,11 +34,13 @@ export interface FetchResult {
  * is the canonical shape — `BridgeStatus` is now a type alias so any
  * downstream code that still imports it from here keeps working.
  */
-export type BridgeStatus = import('@fetchproxy/server').BridgeHealth;
+export type BridgeStatus =
+  import('@chrischall/mcp-utils/fetchproxy').BridgeHealth;
 
 /** 0.10.0+ result of `RedfinTransport.runProbe` — projection of the
- *  underlying `@fetchproxy/server` `BridgeProbeResult`. */
-export type BridgeProbeResult = import('@fetchproxy/server').BridgeProbeResult;
+ *  underlying `@chrischall/mcp-utils/fetchproxy` `BridgeProbeResult`. */
+export type BridgeProbeResult =
+  import('@chrischall/mcp-utils/fetchproxy').BridgeProbeResult;
 
 export interface RedfinTransport {
   /** Bring the transport up. Idempotent. */
