@@ -12,6 +12,7 @@
 //
 // Error mapping (non-2xx, sign-in interstitial, empty 204 body) lives
 // here so tool authors never have to think about it.
+import { formatApiError } from '@chrischall/mcp-utils';
 import type {
   BridgeProbeResult,
   BridgeStatus,
@@ -152,13 +153,16 @@ export class RedfinClient {
 
   private throwIfNotOk(result: FetchResult, method: string, path: string): void {
     if (result.status >= 200 && result.status < 300) return;
-    const bodyPreview = result.body
-      ? ` — ${result.body.slice(0, 500).replace(/\s+/g, ' ').trim()}${
-          result.body.length > 500 ? '…' : ''
-        }`
-      : '';
+    // `formatApiError` (from @chrischall/mcp-utils) redacts secrets
+    // (Bearer tokens / JWTs) BEFORE truncating the upstream body, so a
+    // Redfin error page that echoes a session token can't leak into a
+    // tool result. Whitespace-collapse first to keep the old single-line
+    // preview shape, then let formatApiError cap + redact it.
+    const collapsed = result.body.replace(/\s+/g, ' ').trim();
     throw new Error(
-      `Redfin API error: ${result.status} for ${method} ${path}${bodyPreview}`
+      formatApiError(result.status, method, path, collapsed, {
+        service: 'Redfin',
+      })
     );
   }
 
