@@ -6,14 +6,18 @@
 //      The shared fetchproxy Chrome/Safari extension — installed
 //      separately, not in this repo — connects here.
 //      See https://github.com/chrischall/fetchproxy.
-//   2. RedfinClient.start() — brings the transport up.
-//   3. Register tool handlers against the MCP server.
-//   4. Connect the MCP server to stdio for the host client.
+//   2. RedfinClient.start() — brings the transport up. This runs BEFORE
+//      runMcp connects stdio, preserving the deferred-config-error
+//      pattern: a bridge that can't come up surfaces here, before the
+//      host's first tool call, rather than wedging the JSON-RPC channel.
+//   3. runMcp registers tool handlers, prints the stderr banner, wires
+//      SIGINT/SIGTERM → client.close(), and connects the MCP server to
+//      stdio for the host client.
 //
-// The transport outlives the MCP session. On SIGINT/SIGTERM we close it
-// so ports/connections don't leak between client restarts.
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+// The transport outlives the MCP session. On SIGINT/SIGTERM the
+// `shutdown.onSignal` hook closes it so ports/connections don't leak
+// between client restarts.
+import { runMcp, readEnvVar } from '@chrischall/mcp-utils';
 import { RedfinClient } from './client.js';
 import { FetchproxyTransport } from './transport-fetchproxy.js';
 import { registerSearchTools } from './tools/search.js';
@@ -35,47 +39,42 @@ import { registerSessionTools } from './tools/sessions.js';
 
 const VERSION = '0.9.0'; // x-release-please-version
 
-const port = process.env.REDFIN_WS_PORT
-  ? Number(process.env.REDFIN_WS_PORT)
-  : undefined;
+const portRaw = readEnvVar('REDFIN_WS_PORT');
+const port = portRaw ? Number(portRaw) : undefined;
 
 const transport = new FetchproxyTransport({ port, version: VERSION });
 
 const client = new RedfinClient({ transport });
+// Bring the bridge up BEFORE runMcp connects stdio (deferred-config-error
+// pattern — a failure here surfaces before any tool call).
 await client.start();
 
-const server = new McpServer({ name: 'redfin-mcp', version: VERSION });
-
-registerSearchTools(server, client);
-registerPropertyTools(server, client);
-registerSavedTools(server, client);
-registerMarketTools(server, client);
-registerMortgageTools(server);
-registerHistoryTools(server, client);
-registerCompareTools(server, client);
-registerClimateTools(server, client);
-registerRentalsTools(server, client);
-registerAffordabilityTools(server);
-registerPhotosTools(server, client);
-registerGetByAddressTools(server, client);
-registerHealthcheckTools(server, client);
-registerBulkGetTools(server, client);
-registerResolveAddressesTools(server, client);
-registerSessionTools(server);
-
-console.error(
-  `[redfin-mcp] v${VERSION} — WebSocket bridge via @fetchproxy/server on 127.0.0.1:${port ?? 37149}. ` +
+await runMcp({
+  name: 'redfin-mcp',
+  version: VERSION,
+  deps: client,
+  tools: [
+    (server) => registerSearchTools(server, client),
+    (server) => registerPropertyTools(server, client),
+    (server) => registerSavedTools(server, client),
+    (server) => registerMarketTools(server, client),
+    (server) => registerMortgageTools(server),
+    (server) => registerHistoryTools(server, client),
+    (server) => registerCompareTools(server, client),
+    (server) => registerClimateTools(server, client),
+    (server) => registerRentalsTools(server, client),
+    (server) => registerAffordabilityTools(server),
+    (server) => registerPhotosTools(server, client),
+    (server) => registerGetByAddressTools(server, client),
+    (server) => registerHealthcheckTools(server, client),
+    (server) => registerBulkGetTools(server, client),
+    (server) => registerResolveAddressesTools(server, client),
+    (server) => registerSessionTools(server),
+  ],
+  banner:
+    `[redfin-mcp] v${VERSION} — WebSocket bridge via @fetchproxy/server on 127.0.0.1:${port ?? 37149}. ` +
     'Install the fetchproxy extension (see https://github.com/chrischall/fetchproxy) ' +
     'and sign into redfin.com. This project was developed and is maintained by AI (Claude). ' +
-    'Use at your own discretion.'
-);
-
-const shutdown = async () => {
-  await client.close();
-  process.exit(0);
-};
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
-
-const stdio = new StdioServerTransport();
-await server.connect(stdio);
+    'Use at your own discretion.',
+  shutdown: { onSignal: () => client.close() },
+});

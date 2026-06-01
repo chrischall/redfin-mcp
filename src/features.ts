@@ -17,6 +17,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
+import { readEnvVar } from '@chrischall/mcp-utils';
 import { extractFeatures, type ExtractedFeatures } from '@chrischall/realty-core';
 
 export { extractFeatures };
@@ -51,7 +52,11 @@ let cachedPath: string | null = null;
  * visible). Cached per process keyed by the env-var value.
  */
 export function loadCommunities(): string[] {
-  const path = process.env.REDFIN_COMMUNITIES_FILE?.trim();
+  // `readEnvVar` (from @chrischall/mcp-utils) trims and treats
+  // whitespace-only / `'undefined'` / `'null'` / unsubstituted `${...}`
+  // placeholders as unset — hardening over the bare `?.trim()` for hosts
+  // that forward an un-expanded `.mcp.json` env block.
+  const path = readEnvVar('REDFIN_COMMUNITIES_FILE');
   if (!path) {
     cachedCommunities = null;
     cachedPath = null;
