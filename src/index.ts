@@ -37,7 +37,7 @@ import { registerBulkGetTools } from './tools/bulk-get.js';
 import { registerResolveAddressesTools } from './tools/resolve-addresses.js';
 import { registerSessionTools } from './tools/sessions.js';
 
-const VERSION = '0.9.0'; // x-release-please-version
+const VERSION = '0.9.1'; // x-release-please-version
 
 const portRaw = readEnvVar('REDFIN_WS_PORT');
 const port = portRaw ? Number(portRaw) : undefined;
