@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.1](https://github.com/chrischall/redfin-mcp/compare/v0.9.0...v0.9.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* adopt @fetchproxy/server 0.13.0 (bridge host failover + re-pairing) ([#105](https://github.com/chrischall/redfin-mcp/issues/105)) ([e52b21c](https://github.com/chrischall/redfin-mcp/commit/e52b21c226a5b64b825fe7616cd2e4f154f3baaf))
+* adopt @fetchproxy/server 1.0.0 + @chrischall/mcp-utils 0.5.0 ([#107](https://github.com/chrischall/redfin-mcp/issues/107)) ([d0ee055](https://github.com/chrischall/redfin-mcp/commit/d0ee055032bc6a86d8062a5ce04464015d7de678))
+
 ## [0.9.0](https://github.com/chrischall/redfin-mcp/compare/v0.8.0...v0.9.0) (2026-05-29)
 
 
