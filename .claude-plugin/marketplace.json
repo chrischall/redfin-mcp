@@ -6,7 +6,7 @@
     "email": "chris.c.hall@gmail.com"
   },
   "metadata": {
-    "description": "MCP server for Redfin — search listings, fetch property details, market reports, saved homes. Routes through the user signed-in redfin.com tab via the fetchproxy browser extension to dodge bot detection.",
+    "description": "MCP server for Redfin — search listings, fetch property details, market reports, saved homes. Routes through the user's signed-in redfin.com tab via the fetchproxy browser extension, reusing the user's existing authenticated session.",
     "version": "0.9.1"
   },
   "plugins": [
