@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/chrischall/redfin-mcp/compare/v0.9.1...v0.9.2) (2026-06-07)
+
+
+### Documentation
+
+* neutral wording for fetchproxy routing in description ([#111](https://github.com/chrischall/redfin-mcp/issues/111)) ([2bfde97](https://github.com/chrischall/redfin-mcp/commit/2bfde97fc0e7c784adf2c6d0d9a3a1284602a879))
+
 ## [0.9.1](https://github.com/chrischall/redfin-mcp/compare/v0.9.0...v0.9.1) (2026-06-04)
 
 
