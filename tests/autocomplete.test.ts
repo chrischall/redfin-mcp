@@ -4,6 +4,7 @@ import {
   parseAddressUrl,
   parseRegionId,
   resolveAddress,
+  resolveBoth,
   resolveRegion,
 } from '../src/autocomplete.js';
 
@@ -264,5 +265,63 @@ describe('resolveAddress', () => {
       '268 Mallard Rd Lake Lure NC 28746'
     );
     expect(r?.home_id).toBe('12345');
+  });
+});
+
+describe('resolveBoth', () => {
+  const mockFetchStingrayJson = vi.fn();
+  const mockClient = {
+    fetchStingrayJson: mockFetchStingrayJson,
+  } as unknown as RedfinClient;
+
+  it('AUDIT 1.B2: applies the same wrong-house gate as resolveAddress (search profile_only path)', async () => {
+    // Fuzzy autocomplete returns the neighbor at 160 for a 158 query, plus a
+    // Places row. The address must be rejected; the region must survive.
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        sections: [
+          {
+            name: 'Places',
+            rows: [{ id: '6_12345', name: 'Lake Lure, NC', url: '/city/12345' }],
+          },
+          {
+            name: 'Addresses',
+            rows: [
+              {
+                name: '160 Raven Blvd',
+                subName: 'Lake Lure, NC 28746',
+                url: '/NC/Lake-Lure/160-Raven-Blvd-28746/home/999',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const r = await resolveBoth(mockClient, '158 Raven Blvd Lake Lure NC');
+    expect(r.address).toBeNull();
+    expect(r.region?.region_id).toBe(12345);
+  });
+
+  it('returns a genuinely matching Addresses row alongside the region', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        sections: [
+          {
+            name: 'Addresses',
+            rows: [
+              {
+                name: '158 Raven Blvd',
+                subName: 'Lake Lure, NC 28746',
+                url: '/NC/Lake-Lure/158-Raven-Blvd-28746/home/112653221',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const r = await resolveBoth(mockClient, '158 Raven Blvd Lake Lure NC');
+    expect(r.address?.home_id).toBe('112653221');
   });
 });
