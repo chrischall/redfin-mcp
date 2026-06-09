@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { FetchproxyTimeoutError } from '@chrischall/mcp-utils/fetchproxy';
 import type { RedfinClient } from '../../src/client.js';
 import { registerResolveAddressesTools } from '../../src/tools/resolve-addresses.js';
 import { createTestHarness, parseToolResult } from '../helpers.js';
@@ -132,6 +133,190 @@ describe('redfin_resolve_addresses tool', () => {
       addresses: [],
     });
     expect(r.isError).toBeTruthy();
+  });
+
+  // -- TIMEOUT vs. GENUINE MISS (D2, #78 bug class) -------------------
+  //
+  // The reporter saw rows marked `resolved: false` from a *bridge
+  // timeout* — indistinguishable from a genuine "no match". That nearly
+  // recorded real properties as absent. classifyRowError gives the
+  // discriminator: a timeout surfaces as a retryable `status: "timeout"`,
+  // never collapsed into a silent miss.
+
+  it('classifies a bridge timeout distinctly from a genuine no-match (D2)', async () => {
+    // The address-resolution fetch times out, even after the one retry.
+    mockFetchStingrayJson.mockImplementation(async () => {
+      throw new FetchproxyTimeoutError({
+        url: 'https://www.redfin.com/stingray/do/location-autocomplete',
+        timeoutMs: 30_000,
+      });
+    });
+    const r = await harness.callTool('redfin_resolve_addresses', {
+      addresses: ['158 Raven Blvd, Lake Lure NC 28746'],
+    });
+    expect(r.isError).toBeFalsy();
+    const parsed = parseToolResult<{
+      results: Array<{
+        resolved: boolean;
+        status?: string;
+        retryable?: boolean;
+        error?: string;
+      }>;
+    }>(r);
+    // Not resolved, but distinctly a transient timeout — NOT a real miss.
+    expect(parsed.results[0].resolved).toBe(false);
+    expect(parsed.results[0].status).toBe('timeout');
+    expect(parsed.results[0].retryable).toBe(true);
+    expect(parsed.results[0].error).toMatch(/bridge timeout after retry/);
+  });
+
+  it('retries a transient timeout once before surfacing it (#78)', async () => {
+    // First autocomplete fetch times out; the retry succeeds and the row
+    // resolves. retryOnceOnTimeout wraps the whole resolver ladder per row.
+    let calls = 0;
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      calls++;
+      if (calls === 1) {
+        throw new FetchproxyTimeoutError({
+          url: 'https://www.redfin.com/stingray/do/location-autocomplete',
+          timeoutMs: 30_000,
+        });
+      }
+      const query = decodeURIComponent(
+        (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+      );
+      if (query.includes('158 Raven')) {
+        return {
+          resultCode: 0,
+          payload: {
+            sections: [
+              {
+                name: 'Addresses',
+                rows: [
+                  {
+                    name: '158 Raven Blvd',
+                    subName: 'Lake Lure, NC 28746',
+                    url: '/NC/Lake-Lure/158-Raven-Blvd-28746/home/112653221',
+                    id: '112653221',
+                  },
+                ],
+              },
+            ],
+          },
+        };
+      }
+      return {
+        resultCode: 0,
+        payload: { sections: [{ name: 'Addresses', rows: [] }] },
+      };
+    });
+    const r = await harness.callTool('redfin_resolve_addresses', {
+      addresses: ['158 Raven Blvd, Lake Lure NC 28746'],
+    });
+    const parsed = parseToolResult<{
+      results: Array<{ resolved: boolean; home_id?: string }>;
+    }>(r);
+    expect(parsed.results[0].resolved).toBe(true);
+    expect(parsed.results[0].home_id).toBe('112653221');
+  });
+
+  // -- OVERALL DEADLINE → partial results, never wedges (D2) ----------
+
+  describe('overall hard deadline → partial results, never wedges (D2)', () => {
+    const FAST_TUNING = { overallDeadlineMs: 200 };
+
+    it('a single hung row is backfilled as a retryable timeout; others resolve', async () => {
+      const deadlineHarness = await createTestHarness((server) =>
+        registerResolveAddressesTools(server, mockClient, FAST_TUNING)
+      );
+      mockFetchStingrayJson.mockImplementation(async (path: string) => {
+        const query = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (query.includes('Hang')) {
+          // Never settles — the wedging row.
+          return new Promise(() => {});
+        }
+        if (query.includes('158 Raven')) {
+          return {
+            resultCode: 0,
+            payload: {
+              sections: [
+                {
+                  name: 'Addresses',
+                  rows: [
+                    {
+                      name: '158 Raven Blvd',
+                      subName: 'Lake Lure, NC 28746',
+                      url: '/NC/Lake-Lure/158-Raven-Blvd-28746/home/111',
+                      id: '111',
+                    },
+                  ],
+                },
+              ],
+            },
+          };
+        }
+        return {
+          resultCode: 0,
+          payload: { sections: [{ name: 'Addresses', rows: [] }] },
+        };
+      });
+      const r = await deadlineHarness.callTool('redfin_resolve_addresses', {
+        addresses: [
+          '158 Raven Blvd, Lake Lure NC 28746',
+          '1 Hang Ln, Nowhere NC 28746',
+          '158 Raven Blvd, Lake Lure NC 28746',
+        ],
+      });
+      const parsed = parseToolResult<{
+        count: number;
+        pending?: number;
+        results: Array<{
+          resolved: boolean;
+          home_id?: string;
+          status?: string;
+          retryable?: boolean;
+          error?: string;
+        }>;
+      }>(r);
+      // One row per input, input order preserved.
+      expect(parsed.count).toBe(3);
+      expect(parsed.results[0].resolved).toBe(true);
+      expect(parsed.results[0].home_id).toBe('111');
+      expect(parsed.results[2].resolved).toBe(true);
+      // The hung row is backfilled as a retryable pending/timeout — never a
+      // silent `resolved: false` miss.
+      expect(parsed.results[1].resolved).toBe(false);
+      expect(parsed.results[1].status).toBe('pending');
+      expect(parsed.results[1].retryable).toBe(true);
+      expect(parsed.pending).toBe(1);
+      await deadlineHarness.close();
+    }, 5000);
+
+    it('does not poison the connection: resolves promptly despite a hung row', async () => {
+      const deadlineHarness = await createTestHarness((server) =>
+        registerResolveAddressesTools(server, mockClient, FAST_TUNING)
+      );
+      mockFetchStingrayJson.mockImplementation(async (path: string) => {
+        const query = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (query.includes('Hang')) return new Promise(() => {});
+        return {
+          resultCode: 0,
+          payload: { sections: [{ name: 'Addresses', rows: [] }] },
+        };
+      });
+      const start = Date.now();
+      const r = await deadlineHarness.callTool('redfin_resolve_addresses', {
+        addresses: ['1 Hang Ln', 'x', 'y'],
+      });
+      const elapsed = Date.now() - start;
+      expect(r.isError).toBeFalsy();
+      expect(elapsed).toBeLessThan(3000);
+      await deadlineHarness.close();
+    }, 5000);
   });
 
   it('caps addresses at 100', async () => {

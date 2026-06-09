@@ -2,7 +2,10 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   BRIDGE_CONCURRENCY,
+  classifyRowError,
   mapWithConcurrency,
+  retryOnceOnTimeout,
+  withDeadline,
 } from '@chrischall/mcp-utils/fetchproxy';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
@@ -25,6 +28,49 @@ import {
  */
 
 const MAX_ADDRESSES = 100;
+
+/**
+ * Overall hard deadline (ms) for the whole `redfin_resolve_addresses`
+ * call. Same wedge class as the bulk-get deadline (issue #98): a single
+ * hung row with no shorter effective deadline can wedge the MCP
+ * connection into a `-32001 Request timed out`. Capped comfortably below
+ * the ~60s client timeout, matching the cohort 45-50s convention.
+ */
+const OVERALL_DEADLINE_MS = 45_000;
+
+/**
+ * `classifyRowError` row-error kinds, plus `pending` for an
+ * overall-deadline cut. `'ok'` is implied by `resolved: true`. These are
+ * surfaced as a machine-readable `status` so a bridge timeout is never
+ * mistaken for a genuine no-match (D2, the #78 bug class).
+ */
+type ResolveRowStatus =
+  | 'timeout'
+  | 'bridge_down'
+  | 'protocol'
+  | 'pending'
+  | 'other';
+
+/** Statuses where re-issuing the same row could plausibly succeed. */
+const RETRYABLE_ROW_KINDS = new Set<ResolveRowStatus>([
+  'timeout',
+  'bridge_down',
+  'pending',
+]);
+
+/**
+ * Tuning knobs. Tests inject a tiny `overallDeadlineMs` so the suite
+ * doesn't wait on real wall-clock.
+ */
+export interface ResolveAddressesTuning {
+  /**
+   * Overall hard deadline (ms) for the whole call. When it fires, any
+   * row that hasn't settled is backfilled with `status: 'pending'`
+   * (retryable) and the call resolves with partial results rather than
+   * hanging. Defaults to {@link OVERALL_DEADLINE_MS}.
+   */
+  overallDeadlineMs?: number;
+}
 
 const AddressInput = z.union([
   z.string(),
@@ -60,6 +106,19 @@ interface ResolvedAddressRow {
    * so bulk callers can see WHICH form Redfin recognized. */
   matched_variant?: string;
   error?: string;
+  /**
+   * Machine-readable error classification (D2). Present only on
+   * unresolved rows that failed (not on a clean `resolved: false` miss):
+   * a bridge `timeout`/`bridge_down`/`pending` must stay distinct from a
+   * genuine no-match so the caller never records a real property as
+   * absent (the #78 bug class).
+   */
+  status?: ResolveRowStatus;
+  /**
+   * Whether re-issuing this exact row could plausibly succeed. Set
+   * alongside `status` on transient-failure rows.
+   */
+  retryable?: boolean;
 }
 
 /** Normalize either input shape to the shared `AddressParts` form. */
@@ -92,8 +151,15 @@ async function resolveOne(
     // `pool` memoizes the search-fallback rung's region lookup + ~350-home
     // gis pull across same-locality rows, so a same-city batch does one
     // region lookup + one gis pull instead of N of each.
+    //
+    // Wrapped in retryOnceOnTimeout (#78): a single FetchproxyTimeoutError
+    // inside the resolver ladder retries the whole ladder once before
+    // bubbling up. Any other error class bubbles immediately — only a
+    // transient bridge hiccup gets a second chance.
     const { match, attempts, matchedVariant, matchedVia } =
-      await resolveAddressWithFallbacks(client, parts, { pool });
+      await retryOnceOnTimeout(() =>
+        resolveAddressWithFallbacks(client, parts, { pool })
+      );
     const query = attempts[0] ?? parts.street;
     if (!match) return { input, query, resolved: false };
     return {
@@ -120,25 +186,36 @@ async function resolveOne(
         : [input.street, input.city, input.state, input.zip]
             .filter((s): s is string => Boolean(s && s.trim()))
             .join(' ');
+    // D2 (#78 bug class): a bridge timeout that survives the retry MUST
+    // surface distinctly. Previously this captured `(e as Error).message`
+    // with no classification, so a timeout was indistinguishable from a
+    // genuine no-match (`resolved: false`) — the reporter nearly recorded
+    // real properties as absent. classifyRowError gives the discriminator
+    // + the canonical wrapper string.
+    const { kind, message } = classifyRowError(e);
     return {
       input,
       query: fallbackQuery,
       resolved: false,
-      error: (e as Error).message,
+      status: kind,
+      retryable: RETRYABLE_ROW_KINDS.has(kind),
+      error: message,
     };
   }
 }
 
 export function registerResolveAddressesTools(
   server: McpServer,
-  client: RedfinClient
+  client: RedfinClient,
+  tuning: ResolveAddressesTuning = {}
 ): void {
+  const overallDeadlineMs = tuning.overallDeadlineMs ?? OVERALL_DEADLINE_MS;
   server.registerTool(
     'redfin_resolve_addresses',
     {
       title: 'Bulk-resolve street addresses to Redfin URLs + home_ids',
       description:
-        "Resolve up to 100 free-text street addresses to Redfin canonical home URLs + home_ids in a single tool call. Each input is either a string (full address) or a structured `{street, city, state, zip}` object. Output preserves input order. Unresolved entries return `resolved: false` without aborting the batch. Server-side concurrency, ~6 in flight at a time. Use this when you have a list of properties from another system (Compass, MLS, spreadsheet) and need their Redfin handles for follow-on calls — collapses the typical 6-search-call + 15-resolve flow into one trip.",
+        "Resolve up to 100 free-text street addresses to Redfin canonical home URLs + home_ids in a single tool call. Each input is either a string (full address) or a structured `{street, city, state, zip}` object. Output preserves input order. Unresolved entries return `resolved: false` without aborting the batch; a transient bridge failure surfaces a distinct retryable `status` (timeout/bridge_down/pending) so it is never mistaken for a genuine no-match. Per-row retry-once-on-timeout, server-side concurrency ~6 in flight. The whole call is bounded by an overall hard deadline: a single slow/hung row never wedges the server — unsettled rows come back with `status: \"pending\"` and a `pending` count so you can re-run just those. Use this when you have a list of properties from another system (Compass, MLS, spreadsheet) and need their Redfin handles for follow-on calls — collapses the typical 6-search-call + 15-resolve flow into one trip.",
       annotations: {
         title: 'Bulk-resolve street addresses to Redfin URLs + home_ids',
         readOnlyHint: true,
@@ -160,19 +237,69 @@ export function registerResolveAddressesTools(
       // rung's per-locality region lookup + gis pull so a same-city batch
       // collapses to one region lookup + one gis pull total.
       const pool = createLocalityPoolCache();
-      const results = await mapWithConcurrency(
-        addresses as AddressInput[],
-        BRIDGE_CONCURRENCY,
-        (a) => resolveOne(client, a, pool)
+      const inputs = addresses as AddressInput[];
+
+      // Index-addressable result slots, one per input. A slot stays
+      // `undefined` until its resolve settles; if the overall deadline
+      // fires first (D2), every still-undefined slot is backfilled with a
+      // retryable `pending` row so the response always has exactly one row
+      // per input, in input order — and the call returns partial results
+      // instead of hanging for the full client timeout.
+      const slots: Array<ResolvedAddressRow | undefined> = inputs.map(
+        () => undefined
       );
+      const indexed = inputs.map((input, index) => ({ input, index }));
+
+      const runAll = mapWithConcurrency<
+        { input: AddressInput; index: number },
+        void
+      >(indexed, BRIDGE_CONCURRENCY, async ({ input, index }) => {
+        slots[index] = await resolveOne(client, input, pool);
+      });
+
+      // Race the whole batch against the overall hard deadline (D2). On
+      // expiry the in-flight `runAll` promise is abandoned (left to settle
+      // in the background and ignored) — we do NOT await it, so a
+      // permanently-hung row can't wedge the connection.
+      await withDeadline(runAll, overallDeadlineMs);
+
+      const results: ResolvedAddressRow[] = slots.map((row, index) => {
+        if (row) return row;
+        const input = inputs[index];
+        const fallbackQuery =
+          typeof input === 'string'
+            ? input
+            : [input.street, input.city, input.state, input.zip]
+                .filter((s): s is string => Boolean(s && s.trim()))
+                .join(' ');
+        // A deadline-cut row is unresolved BUT retryable — never a silent
+        // `resolved: false` miss.
+        return {
+          input,
+          query: fallbackQuery,
+          resolved: false,
+          status: 'pending',
+          retryable: true,
+          error:
+            'resolve_addresses overall deadline reached before this row ' +
+            'settled — the request is still pending (likely a slow/hung ' +
+            'sub-request). Re-run just the pending addresses; a single slow ' +
+            'row no longer wedges the batch.',
+        };
+      });
+
       const ok = results.filter((r) => r.resolved).length;
       const unresolved = results.length - ok;
-      return textResult({
-        count: results.length,
-        resolved: ok,
-        unresolved,
-        results,
-      });
+      const pending = results.filter((r) => r.status === 'pending').length;
+      const envelope: {
+        count: number;
+        resolved: number;
+        unresolved: number;
+        pending?: number;
+        results: ResolvedAddressRow[];
+      } = { count: results.length, resolved: ok, unresolved, results };
+      if (pending > 0) envelope.pending = pending;
+      return textResult(envelope);
     }
   );
 }
