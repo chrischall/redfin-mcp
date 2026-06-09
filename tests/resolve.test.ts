@@ -492,6 +492,57 @@ describe('resolveAddressWithFallbacks — search-fallback rung (#75)', () => {
     expect(result.matchedVia).toBe('search_fallback');
   });
 
+  it('AUDIT 1.B1: rejects a same-street WRONG-HOUSE candidate — house-number mismatch disqualifies, it is not just a missing bonus', async () => {
+    // The wrong-house class (zillow fixed it as its issue #109 with
+    // realty-core's addressMatch). The requested house (231) is NOT in
+    // the gis pool; the pool's best name-overlap is the SAME street at a
+    // DIFFERENT house number. Pre-fix, scoreStreetMatch gave it a
+    // positive score (name overlap, just no +10 number bonus) and the
+    // resolver returned the wrong home. It must return null instead.
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (q === 'Lake Lure NC') {
+          return placesPayload(555, 'Lake Lure', 'NC, USA');
+        }
+        return emptyAddressesResponse;
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        return gisPayload([
+          {
+            propertyId: 7,
+            url: '/NC/Lake-Lure/233-Bluebird-Rd-28746/home/7',
+            streetLine: '233 Bluebird Rd',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+          },
+          {
+            propertyId: 8,
+            url: '/NC/Lake-Lure/235-Bluebird-Rd-28746/home/8',
+            streetLine: '235 Bluebird Rd',
+            city: 'Lake Lure',
+            state: 'NC',
+            zip: '28746',
+          },
+        ]);
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await resolveAddressWithFallbacks(mockClient, {
+      street: '231 Bluebird Rd',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+
+    // NOT home 7 or 8 — those are the neighbors' houses.
+    expect(result.match).toBeNull();
+  });
+
   it('returns null when region resolution fails (city/state not found in Places)', async () => {
     // Autocomplete misses on the address. The region-resolution query
     // (city + state) also returns no Places row → the search-fallback

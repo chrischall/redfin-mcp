@@ -15,6 +15,7 @@
  * addresses) typically return Addresses, not Places — Redfin's autocomplete
  * doesn't synthesize a region for every address.
  */
+import { addressMatch } from '@chrischall/realty-core';
 import type { RedfinClient } from './client.js';
 
 export interface RedfinRegion {
@@ -160,7 +161,8 @@ export async function resolveRegion(
  * Look up the first matching Addresses row for a free-text query.
  * Used for full street-address inputs that autocomplete maps to a
  * specific home (not a region). Returns null when no Addresses row is
- * present or when the URL doesn't parse into the canonical shape.
+ * present, when the URL doesn't parse into the canonical shape, or when
+ * the returned street doesn't genuinely match the query (see below).
  */
 export async function resolveAddress(
   client: RedfinClient,
@@ -175,6 +177,19 @@ export async function resolveAddress(
   if (!first) return null;
   const parsed = parseAddressUrl(first.url);
   if (!parsed) return null;
+  // Wrong-house gate (audit 1.B2; mirrors zillow's autocomplete-rung
+  // `selectAutocompleteMatch` + addressMatch guard, zillow #109).
+  // Redfin's autocomplete is fuzzy — rows[0] for "158 Raven Blvd" can be
+  // the neighbor at 160 or a near-miss street. Verify the returned street
+  // against the query with realty-core's `addressMatch`, with the ROW's
+  // street as the anchored side: every discriminating token of the
+  // returned street (house number anchored verbatim) must be covered by
+  // the query. The query side carries city/state/zip noise, so anchoring
+  // the row street (not the query) is what makes a same-city near-miss
+  // ("158 Raccoon Rd" for "158 Raven Blvd …") fail the strict-majority
+  // test instead of riding the locality tokens past it.
+  const candidateStreet = first.name ?? parsed.street;
+  if (!addressMatch(candidateStreet, query).matched) return null;
   return {
     home_id: parsed.home_id,
     url: `https://www.redfin.com${first.url}`,

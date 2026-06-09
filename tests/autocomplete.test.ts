@@ -189,4 +189,80 @@ describe('resolveAddress', () => {
     });
     expect(await resolveAddress(mockClient, 'foo')).toBeNull();
   });
+
+  it('AUDIT 1.B2: rejects a fuzzy autocomplete WRONG-HOUSE row — returned house number differs from the query', async () => {
+    // Redfin's autocomplete is fuzzy: a query for 158 can surface the
+    // neighbor at 160 as rows[0]. Accepting it blind resolves the wrong
+    // house. The addressMatch gate must reject it.
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        sections: [
+          {
+            name: 'Addresses',
+            rows: [
+              {
+                name: '160 Raven Blvd',
+                subName: 'Lake Lure, NC 28746',
+                url: '/NC/Lake-Lure/160-Raven-Blvd-28746/home/999',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(
+      await resolveAddress(mockClient, '158 Raven Blvd Lake Lure NC 28746')
+    ).toBeNull();
+  });
+
+  it('AUDIT 1.B2: rejects a fuzzy autocomplete near-miss on a DIFFERENT street, even with the same house number', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        sections: [
+          {
+            name: 'Addresses',
+            rows: [
+              {
+                name: '158 Raccoon Rd',
+                subName: 'Lake Lure, NC 28746',
+                url: '/NC/Lake-Lure/158-Raccoon-Rd-28746/home/998',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(
+      await resolveAddress(mockClient, '158 Raven Blvd Lake Lure NC 28746')
+    ).toBeNull();
+  });
+
+  it('still resolves when the returned street uses a suffix variant of the query (Rd vs Road)', async () => {
+    // The gate must not regress the issue #43 class: suffix drift between
+    // the query and the canonical row is fine — same house, same street.
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        sections: [
+          {
+            name: 'Addresses',
+            rows: [
+              {
+                name: '268 Mallard Road',
+                subName: 'Lake Lure, NC 28746',
+                url: '/NC/Lake-Lure/268-Mallard-Rd-28746/home/12345',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const r = await resolveAddress(
+      mockClient,
+      '268 Mallard Rd Lake Lure NC 28746'
+    );
+    expect(r?.home_id).toBe('12345');
+  });
 });
