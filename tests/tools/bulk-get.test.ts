@@ -325,6 +325,191 @@ describe('redfin_bulk_get tool', () => {
     expect(parsed.results[0].retryable).toBe(false);
   });
 
+  it('retries a transient timeout once per row before failing (#78/D3)', async () => {
+    // The first ATF fetch for the row times out; the retry succeeds. With
+    // retryOnceOnTimeout wrapping the fetch, the row resolves rather than
+    // failing on the one-shot rotating-tab/SW-eviction timeout.
+    let atfCalls = 0;
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.includes('aboveTheFold')) {
+        atfCalls++;
+        if (atfCalls === 1) {
+          throw new FetchproxyTimeoutError({
+            url: 'https://www.redfin.com/stingray/api/home/details/aboveTheFold',
+            timeoutMs: 30_000,
+          });
+        }
+        return {
+          resultCode: 0,
+          payload: {
+            addressSectionInfo: {
+              streetAddress: '1 Main St',
+              city: 'X',
+              state: 'NC',
+              zip: '28746',
+              latestPriceInfo: { amount: 100_000 },
+            },
+          },
+        };
+      }
+      return { resultCode: 0, payload: {} };
+    });
+    const r = await harness.callTool('redfin_bulk_get', {
+      targets: [{ property_id: 1, listing_id: 10 }],
+    });
+    const parsed = parseToolResult<{
+      ok: number;
+      results: Array<{ status?: string; property?: { price: number } }>;
+    }>(r);
+    expect(parsed.ok).toBe(1);
+    expect(parsed.results[0].status).toBe('ok');
+    expect(parsed.results[0].property?.price).toBe(100_000);
+    expect(atfCalls).toBe(2);
+  });
+
+  describe('overall hard deadline → partial results, never wedges (D1)', () => {
+    const FAST_TUNING = { overallDeadlineMs: 200 };
+
+    it('returns partial results when a single row hangs, others still resolve', async () => {
+      // property_id 2 never settles; the overall deadline must fire and the
+      // call must return the other rows' real data plus a per-row pending
+      // marker for the hung row — NOT hang for the full client timeout.
+      const deadlineHarness = await createTestHarness((server) =>
+        registerBulkGetTools(server, mockClient, FAST_TUNING)
+      );
+      mockFetchStingrayJson.mockImplementation(async (path: string) => {
+        const m = /propertyId=(\d+)/.exec(path);
+        const pid = m ? parseInt(m[1], 10) : 0;
+        if (path.includes('aboveTheFold')) {
+          if (pid === 2) {
+            // Never resolves — simulates the wedging row.
+            return new Promise(() => {});
+          }
+          return {
+            resultCode: 0,
+            payload: {
+              addressSectionInfo: {
+                streetAddress: `${pid} Main St`,
+                city: 'X',
+                state: 'NC',
+                zip: '28746',
+                latestPriceInfo: { amount: pid * 100_000 },
+              },
+            },
+          };
+        }
+        return { resultCode: 0, payload: {} };
+      });
+      const r = await deadlineHarness.callTool('redfin_bulk_get', {
+        targets: [
+          { property_id: 1, listing_id: 10 },
+          { property_id: 2, listing_id: 20 },
+          { property_id: 3, listing_id: 30 },
+        ],
+      });
+      const parsed = parseToolResult<{
+        count: number;
+        pending?: number;
+        results: Array<{
+          property_id?: number;
+          property?: { price: number };
+          status?: string;
+          retryable?: boolean;
+          error?: string;
+        }>;
+      }>(r);
+      // Every input target still produces exactly one row, in input order.
+      expect(parsed.count).toBe(3);
+      expect(parsed.results.map((row) => row.property_id)).toEqual([1, 2, 3]);
+      // The good rows returned real data.
+      expect(parsed.results[0].property?.price).toBe(100_000);
+      expect(parsed.results[2].property?.price).toBe(300_000);
+      // The hung row is surfaced as pending — distinct, retryable, NOT a
+      // generic miss / not-found.
+      expect(parsed.results[1].property).toBeUndefined();
+      expect(parsed.results[1].status).toBe('pending');
+      expect(parsed.results[1].retryable).toBe(true);
+      expect(parsed.results[1].error).not.toMatch(/no listing found/i);
+      // The partial-result envelope advertises the pending count.
+      expect(parsed.pending).toBe(1);
+      await deadlineHarness.close();
+    }, 5000);
+
+    it('does not poison the connection: the handler resolves promptly even with a hung row', async () => {
+      const deadlineHarness = await createTestHarness((server) =>
+        registerBulkGetTools(server, mockClient, FAST_TUNING)
+      );
+      mockFetchStingrayJson.mockImplementation(async (path: string) => {
+        const m = /propertyId=(\d+)/.exec(path);
+        const pid = m ? parseInt(m[1], 10) : 0;
+        if (path.includes('aboveTheFold')) {
+          if (pid === 5) return new Promise(() => {});
+          return {
+            resultCode: 0,
+            payload: {
+              addressSectionInfo: {
+                streetAddress: `${pid} Main St`,
+                city: 'X',
+                state: 'NC',
+                zip: '28746',
+                latestPriceInfo: { amount: 1 },
+              },
+            },
+          };
+        }
+        return { resultCode: 0, payload: {} };
+      });
+      const start = Date.now();
+      const r = await deadlineHarness.callTool('redfin_bulk_get', {
+        targets: [
+          { property_id: 1, listing_id: 10 },
+          { property_id: 5, listing_id: 50 },
+          { property_id: 9, listing_id: 90 },
+        ],
+      });
+      const elapsed = Date.now() - start;
+      expect(r.isError).toBeFalsy();
+      expect(elapsed).toBeLessThan(3000);
+      await deadlineHarness.close();
+    }, 5000);
+
+    it('all rows resolving before the deadline → no pending marker', async () => {
+      const deadlineHarness = await createTestHarness((server) =>
+        registerBulkGetTools(server, mockClient, FAST_TUNING)
+      );
+      mockFetchStingrayJson.mockImplementation(async (path: string) => {
+        if (path.includes('aboveTheFold')) {
+          return {
+            resultCode: 0,
+            payload: {
+              addressSectionInfo: {
+                streetAddress: '1 Main St',
+                city: 'X',
+                state: 'NC',
+                zip: '28746',
+                latestPriceInfo: { amount: 1 },
+              },
+            },
+          };
+        }
+        return { resultCode: 0, payload: {} };
+      });
+      const r = await deadlineHarness.callTool('redfin_bulk_get', {
+        targets: [
+          { property_id: 1, listing_id: 10 },
+          { property_id: 2, listing_id: 20 },
+        ],
+      });
+      const parsed = parseToolResult<{
+        pending?: number;
+        results: Array<{ status?: string }>;
+      }>(r);
+      expect(parsed.pending ?? 0).toBe(0);
+      expect(parsed.results.every((row) => row.status === 'ok')).toBe(true);
+      await deadlineHarness.close();
+    });
+  });
+
   it('caps targets at 200', async () => {
     const r = await harness.callTool('redfin_bulk_get', {
       targets: Array.from({ length: 201 }, (_, i) => ({
