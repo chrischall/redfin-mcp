@@ -22,6 +22,7 @@
  *      provided. Round-3 corpus showed mountain MLS addresses
  *      autocomplete is blind to but gis search has indexed.
  */
+import { addressMatch } from '@chrischall/realty-core';
 import type { RedfinClient } from './client.js';
 import {
   parseAddressUrl,
@@ -174,11 +175,16 @@ function houseNumber(street: string | undefined): string | null {
 
 /** Score how well a gis-returned home street matches the input
  * street. Higher is better; 0 means no match at all.
- *   - House number matches: +10 (load-bearing — without this we
- *     could pick the wrong home on the same street).
+ *   - House number matches: +10.
  *   - Each shared non-numeric name token: +1.
  * Returns 0 when there are no shared name tokens — pure
- * number-only matches don't count. */
+ * number-only matches don't count.
+ *
+ * NOTE: this is a RANKER, not a gate. A house-number mismatch here is
+ * only a missing bonus — candidates are hard-gated through realty-core's
+ * `addressMatch` (numeric anchor) in `searchFallbackResolve` BEFORE they
+ * are scored, so a same-street wrong-house row can never win (audit
+ * 1.B1; the wrong-house class zillow closed as its issue #109). */
 function scoreStreetMatch(input: string, candidate: string): number {
   const inputNames = nameTokens(input);
   const candNames = nameTokens(candidate);
@@ -379,6 +385,14 @@ async function searchFallbackResolve(
   let best: { home: RawHome; score: number } | null = null;
   for (const home of raw) {
     const candStreet = streetLineOf(home);
+    // Hard wrong-house gate (audit 1.B1) — realty-core's `addressMatch`
+    // anchors every numeric input token: a candidate whose house number
+    // mismatches the input's is REJECTED outright, not merely denied the
+    // scoring bonus. Without this, the best name-overlap on the same
+    // street at the WRONG house number could win whenever the requested
+    // house isn't in the gis pool. Same gate zillow applies in its
+    // resolver (zillow #109).
+    if (!addressMatch(input.street, candStreet).matched) continue;
     const score = scoreStreetMatch(input.street, candStreet);
     if (score === 0) continue;
     if (!best || score > best.score) best = { home, score };
