@@ -26,6 +26,11 @@ This is a "Pattern A" fetchproxy MCP (every call rides through fetchproxy), not 
 | `redfin_calculate_mortgage` | `tools/mortgage.ts` | (local; no network) | read |
 | `redfin_calculate_affordability` | `tools/affordability.ts` | (local; no network) | read |
 | `redfin_healthcheck` | `tools/healthcheck.ts` | `GET /robots.txt` round-trip through fetchproxy + bridge status | read |
+| `redfin_register_session` | `tools/sessions.ts` | (local; no network) — params: `account_identity` (**required**, min 1), `auth_expires_at?` | write (registry) |
+| `redfin_set_active_session` | `tools/sessions.ts` | (local; no network) — param: `session_id` | write (registry) |
+| `redfin_get_session_context` | `tools/sessions.ts` | (local; no network) — no params | read |
+
+The session trio is the fleet-shared `registerSessionTools` from [`@chrischall/mcp-utils/session`](https://github.com/chrischall/mcp-utils) (prefix `redfin`), backed by the shared `createSessionRegistry()`. `redfin_register_session` takes the shared **`account_identity`** param (required) — re-registering the same identity updates the existing entry in place rather than adding a duplicate. (Breaking change in this adoption: the old optional `account_label` param was replaced by the required `account_identity` to match zillow/homes.)
 
 All `/stingray/...` JSON responses begin with a `{}&&` anti-CSRF prefix; `RedfinClient.fetchStingrayJson` strips it. The two HTML-scraped tools (saved homes, saved searches) use regex extraction since Redfin's user-facing pages are React Server Components — there's no embedded `__NEXT_DATA__` blob like Zillow has.
 
@@ -53,7 +58,6 @@ src/
   features.ts           # extractFeatures — structured listing-feature flags
   resolve.ts            # shared address-resolution rung ladder + per-locality
                         #   pool cache (get_by_address + resolve_addresses)
-  sessions.ts           # in-process session registry (set/get active session)
   mcp.ts                # textResult() result-wrapper + unwrapValue() helper
   tools/                # one registerXxxTools(server, client) per file (16):
     search.ts           # redfin_search_properties (buildGisPath + formatHome)
@@ -72,7 +76,11 @@ src/
     mortgage.ts         # redfin_calculate_mortgage (local PITI; realty-core)
     affordability.ts    # redfin_calculate_affordability (local DTI; realty-core)
     healthcheck.ts      # redfin_healthcheck (bridge probe)
-    sessions.ts         # redfin_{register,set_active,get_session_context}
+    sessions.ts         # thin wrapper over @chrischall/mcp-utils/session's
+                        #   registerSessionTools (prefix 'redfin') —
+                        #   redfin_{register,set_active,get_session_context}.
+                        #   The registry is the shared createSessionRegistry(),
+                        #   constructed in index.ts and passed in.
 
 tests/                  # 1:1 mirror of src/, plus tests/helpers.ts harness.
                         #   All tests mock RedfinClient.{fetchHtml,fetchStingrayJson}.
