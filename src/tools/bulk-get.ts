@@ -3,10 +3,9 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   BRIDGE_CONCURRENCY,
   classifyRowError,
-  mapWithConcurrency,
   retryOnceOnTimeout,
-  withDeadline,
 } from '@chrischall/mcp-utils/fetchproxy';
+import { runBoundedBatch } from '@chrischall/mcp-utils';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import {
@@ -24,7 +23,7 @@ import {
  * errors are captured per-row so a single bad ID doesn't fail the
  * batch. ATF + BTF are fetched in parallel per target (same pipeline
  * as get_property), and targets themselves are fanned out concurrently
- * via `mapWithConcurrency` from `@chrischall/mcp-utils/fetchproxy` (cap pinned at
+ * via `runBoundedBatch` from `@chrischall/mcp-utils` (concurrency pinned at
  * {@link BRIDGE_CONCURRENCY}=6 — the round-3 cohort comparison value)
  * to avoid hammering Redfin.
  *
@@ -204,52 +203,36 @@ export function registerBulkGetTools(
     async ({ targets, include_description }) => {
       const targetList = targets as BulkTarget[];
 
-      // Index-addressable result slots, one per input target. A slot stays
-      // `undefined` until its fetch settles; if the overall deadline fires
-      // first (D1), every still-undefined slot is backfilled with a
-      // `pending` marker so the response always has exactly one row per
-      // input, in input order — and the call returns partial results
-      // instead of hanging for the full client timeout.
-      const slots: Array<BulkPerProperty | undefined> = targetList.map(
-        () => undefined
+      // `runBoundedBatch` (mcp-utils 0.8, hoisted from exactly this pattern):
+      // index-addressable slots + an overall hard deadline (D1) +
+      // concurrency-bounded fan-out, returning one row per input in input
+      // order. When the deadline fires, every still-unsettled slot is filled
+      // by `onTimeout` (a retryable `pending` row) and the in-flight workers
+      // are abandoned — so a single permanently-hung row can't wedge the
+      // connection past the bound. `fetchOne` already catches per-row errors
+      // and returns an error row, so the batch never rejects; the default
+      // `onError` (→ `onTimeout`) only guards the unreachable throw case.
+      const results = await runBoundedBatch<BulkTarget, BulkPerProperty>(
+        targetList,
+        (target) => fetchOne(client, target, include_description === true),
+        {
+          deadlineMs: overallDeadlineMs,
+          concurrency: BRIDGE_CONCURRENCY,
+          // The identity comes from the original target so the row stays
+          // re-runnable; a `pending` row is NEVER a generic miss / not-found.
+          onTimeout: (target): BulkPerProperty => ({
+            property_id: target.property_id,
+            url: target.url ?? '',
+            status: 'pending',
+            retryable: true,
+            error:
+              'bulk_get overall deadline reached before this row settled — ' +
+              'the request is still pending (likely a slow/hung sub-request). ' +
+              'Re-run just the pending targets; a single slow row no longer ' +
+              'wedges the batch.',
+          }),
+        }
       );
-      const indexed = targetList.map((target, index) => ({ target, index }));
-
-      const runAll = mapWithConcurrency<
-        { target: BulkTarget; index: number },
-        void
-      >(indexed, BRIDGE_CONCURRENCY, async ({ target, index }) => {
-        slots[index] = await fetchOne(
-          client,
-          target,
-          include_description === true
-        );
-      });
-
-      // Race the whole batch against the overall hard deadline (D1). On
-      // expiry the in-flight `runAll` promise is abandoned (left to settle
-      // in the background and ignored) — critically, we do NOT await it, so
-      // a permanently-hung row can't wedge the connection.
-      await withDeadline(runAll, overallDeadlineMs);
-
-      // Backfill any slot the deadline cut off as a retryable `pending`
-      // row. The identity comes from the original target so the row stays
-      // re-runnable; a `pending` row is NEVER a generic miss / not-found.
-      const results: BulkPerProperty[] = slots.map((row, index) => {
-        if (row) return row;
-        const target = targetList[index];
-        return {
-          property_id: target.property_id,
-          url: target.url ?? '',
-          status: 'pending',
-          retryable: true,
-          error:
-            'bulk_get overall deadline reached before this row settled — ' +
-            'the request is still pending (likely a slow/hung sub-request). ' +
-            'Re-run just the pending targets; a single slow row no longer ' +
-            'wedges the batch.',
-        };
-      });
 
       const ok = results.filter((r) => r.status === 'ok').length;
       const errored = results.length - ok;

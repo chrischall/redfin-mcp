@@ -121,6 +121,24 @@ describe('FetchproxyTransport', () => {
     expect(inner.close).toHaveBeenCalledTimes(1);
   });
 
+  it('does NOT emit its own startup banner — the factory owns it via logListening (0.10.0)', async () => {
+    // The hand-rolled `[redfin-mcp:bridge] listening …` console.error was
+    // dropped in the 0.10.0 adoption; the factory emits the byte-identical
+    // banner from its own start() under `logListening: true`. The wrapper's
+    // start() now just delegates, so with REDFIN_DEBUG unset it prints
+    // nothing of its own.
+    const t = new FetchproxyTransport({ version: '0.0.0' });
+    const inner = stubInner();
+    installInner(t, inner);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await t.start();
+      expect(errSpy).not.toHaveBeenCalled();
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
   it('runProbe delegates to the inner verb transport', async () => {
     const t = new FetchproxyTransport({ version: '0.0.0' });
     const inner = stubInner();

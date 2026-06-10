@@ -3,10 +3,9 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   BRIDGE_CONCURRENCY,
   classifyRowError,
-  mapWithConcurrency,
   retryOnceOnTimeout,
-  withDeadline,
 } from '@chrischall/mcp-utils/fetchproxy';
+import { runBoundedBatch } from '@chrischall/mcp-utils';
 import type { RedfinClient } from '../client.js';
 import { textResult } from '../mcp.js';
 import {
@@ -239,54 +238,46 @@ export function registerResolveAddressesTools(
       const pool = createLocalityPoolCache();
       const inputs = addresses as AddressInput[];
 
-      // Index-addressable result slots, one per input. A slot stays
-      // `undefined` until its resolve settles; if the overall deadline
-      // fires first (D2), every still-undefined slot is backfilled with a
-      // retryable `pending` row so the response always has exactly one row
-      // per input, in input order — and the call returns partial results
-      // instead of hanging for the full client timeout.
-      const slots: Array<ResolvedAddressRow | undefined> = inputs.map(
-        () => undefined
+      // `runBoundedBatch` (mcp-utils 0.8, hoisted from exactly this pattern):
+      // index-addressable slots + an overall hard deadline (D2) +
+      // concurrency-bounded fan-out, returning one row per input in input
+      // order. When the deadline fires, every still-unsettled slot is filled
+      // by `onTimeout` (a retryable `pending` row) and the in-flight workers
+      // are abandoned — so a single permanently-hung row can't wedge the
+      // connection past the bound. `resolveOne` already catches per-row
+      // errors and returns a `resolved: false` row, so the batch never
+      // rejects; the default `onError` (→ `onTimeout`) only guards the
+      // unreachable throw case.
+      const results = await runBoundedBatch<AddressInput, ResolvedAddressRow>(
+        inputs,
+        (input) => resolveOne(client, input, pool),
+        {
+          deadlineMs: overallDeadlineMs,
+          concurrency: BRIDGE_CONCURRENCY,
+          // A deadline-cut row is unresolved BUT retryable — never a silent
+          // `resolved: false` miss.
+          onTimeout: (input): ResolvedAddressRow => {
+            const fallbackQuery =
+              typeof input === 'string'
+                ? input
+                : [input.street, input.city, input.state, input.zip]
+                    .filter((s): s is string => Boolean(s && s.trim()))
+                    .join(' ');
+            return {
+              input,
+              query: fallbackQuery,
+              resolved: false,
+              status: 'pending',
+              retryable: true,
+              error:
+                'resolve_addresses overall deadline reached before this row ' +
+                'settled — the request is still pending (likely a slow/hung ' +
+                'sub-request). Re-run just the pending addresses; a single ' +
+                'slow row no longer wedges the batch.',
+            };
+          },
+        }
       );
-      const indexed = inputs.map((input, index) => ({ input, index }));
-
-      const runAll = mapWithConcurrency<
-        { input: AddressInput; index: number },
-        void
-      >(indexed, BRIDGE_CONCURRENCY, async ({ input, index }) => {
-        slots[index] = await resolveOne(client, input, pool);
-      });
-
-      // Race the whole batch against the overall hard deadline (D2). On
-      // expiry the in-flight `runAll` promise is abandoned (left to settle
-      // in the background and ignored) — we do NOT await it, so a
-      // permanently-hung row can't wedge the connection.
-      await withDeadline(runAll, overallDeadlineMs);
-
-      const results: ResolvedAddressRow[] = slots.map((row, index) => {
-        if (row) return row;
-        const input = inputs[index];
-        const fallbackQuery =
-          typeof input === 'string'
-            ? input
-            : [input.street, input.city, input.state, input.zip]
-                .filter((s): s is string => Boolean(s && s.trim()))
-                .join(' ');
-        // A deadline-cut row is unresolved BUT retryable — never a silent
-        // `resolved: false` miss.
-        return {
-          input,
-          query: fallbackQuery,
-          resolved: false,
-          status: 'pending',
-          retryable: true,
-          error:
-            'resolve_addresses overall deadline reached before this row ' +
-            'settled — the request is still pending (likely a slow/hung ' +
-            'sub-request). Re-run just the pending addresses; a single slow ' +
-            'row no longer wedges the batch.',
-        };
-      });
 
       const ok = results.filter((r) => r.resolved).length;
       const unresolved = results.length - ok;

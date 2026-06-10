@@ -39,7 +39,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@chrischall/mcp-utils": "^0.9.0",
+    "@chrischall/mcp-utils": "^0.10.0",
     "@chrischall/realty-core": "^0.4.1",
     "@fetchproxy/server": "^1.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
