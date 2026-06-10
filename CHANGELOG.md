@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.3](https://github.com/chrischall/redfin-mcp/compare/v0.9.2...v0.9.3) (2026-06-10)
+
+
+### Bug Fixes
+
+* bound bulk_get + resolve_addresses with an overall deadline and classify row timeouts ([#114](https://github.com/chrischall/redfin-mcp/issues/114)) ([f94fcb3](https://github.com/chrischall/redfin-mcp/commit/f94fcb34ae12b5726449a8262d479c16c9d4b7ca))
+
+
+### Refactor
+
+* adopt mcp-utils 0.10.0 helpers (factory banner + runBoundedBatch) ([#118](https://github.com/chrischall/redfin-mcp/issues/118)) ([f3debe9](https://github.com/chrischall/redfin-mcp/commit/f3debe9fda5fcd163d434046e00127f52ec0ed72))
+* **sessions:** adopt shared registerSessionTools ([#116](https://github.com/chrischall/redfin-mcp/issues/116)) ([cb05abd](https://github.com/chrischall/redfin-mcp/commit/cb05abd02ca1eff92f9cf43acc29b8a9cbc44e47))
+
 ## [0.9.2](https://github.com/chrischall/redfin-mcp/compare/v0.9.1...v0.9.2) (2026-06-07)
 
 
