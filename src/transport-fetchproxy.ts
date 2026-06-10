@@ -7,9 +7,11 @@
 // header/body passthrough, {status, body, url} projection), the runProbe
 // passthrough, and the bridgeHealth() snapshot — the same hand-rolled
 // methods redfin / homes / compass / musescore each wrote verbatim. This
-// thin class keeps only the redfin-specific startup banner + REDFIN_DEBUG
-// per-request timing, and the named export so index.ts / downstream
-// importers are unchanged.
+// thin class keeps only REDFIN_DEBUG per-request timing and the named
+// export so index.ts / downstream importers are unchanged. As of the
+// 0.10.0 adoption the startup banner is emitted by the factory itself
+// (via `logListening: true`) — the hand-rolled console.error that used to
+// live in start() is gone; the line is byte-identical.
 //
 // As of @fetchproxy/server 0.8.0 (carried forward in 1.x), lazy-revive
 // on Chrome MV3 service-worker eviction (default 2000ms) and per-request
@@ -89,6 +91,12 @@ export class FetchproxyTransport implements RedfinTransport {
       port: this.port,
       serverName: opts.server ?? 'redfin-mcp',
       version: opts.version,
+      // 0.10.0+: the factory owns the canonical
+      // `[redfin-mcp:bridge] listening on 127.0.0.1:<port> (role=…, version=…)`
+      // startup banner (stderr only). We opt in and drop the hand-rolled
+      // console.error that used to live in start() — the emitted line is
+      // byte-identical.
+      logListening: true,
       // Subdomains of redfin.com (www, photos, etc.) match automatically.
       domains: ['redfin.com'],
       // The verb adapters apply subdomain 'www' per call unless overridden —
@@ -108,12 +116,11 @@ export class FetchproxyTransport implements RedfinTransport {
 
   async start(): Promise<void> {
     log('listen start', { port: this.port, version: this.serverVersion });
+    // The factory's own start() emits the canonical
+    // `[redfin-mcp:bridge] listening on 127.0.0.1:<port> (role=…, version=…)`
+    // banner under `logListening: true` (0.10.0+) — byte-identical to the
+    // line redfin used to hand-roll here.
     await this.inner.start();
-    // Stderr-only — stdio MCP transports reserve stdout for JSON-RPC.
-    console.error(
-      `[redfin-mcp:bridge] listening on 127.0.0.1:${this.port} ` +
-        `(role=${this.inner.role ?? 'unknown'}, version=${this.serverVersion})`
-    );
   }
 
   async close(): Promise<void> {

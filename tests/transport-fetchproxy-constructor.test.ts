@@ -47,6 +47,19 @@ describe('FetchproxyTransport — constructor options', () => {
     expect(factoryCalls[0]!.domains).toEqual(['redfin.com']);
   });
 
+  it('passes logListening:true so the factory emits the canonical startup banner (0.10.0)', async () => {
+    // 0.10.0 moved the `[redfin-mcp:bridge] listening on 127.0.0.1:<port>
+    // (role=…, version=…)` banner into the factory. We opt in here and drop
+    // the hand-rolled `console.error` that used to live in start(); the
+    // emitted banner is byte-identical.
+    const { FetchproxyTransport } = await import(
+      '../src/transport-fetchproxy.js'
+    );
+    new FetchproxyTransport({ version: '0.0.0-test' });
+    expect(factoryCalls.length).toBe(1);
+    expect(factoryCalls[0]!.logListening).toBe(true);
+  });
+
   it('does NOT pass keepAliveIntervalMs — relies on the server-side 25s default (fetchproxy#72)', async () => {
     const { FetchproxyTransport } = await import(
       '../src/transport-fetchproxy.js'
