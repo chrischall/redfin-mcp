@@ -41,7 +41,9 @@ src/
   index.ts              # entry — builds FetchproxyTransport, RedfinClient,
                         #   registers tool groups, connects stdio transport
   transport.ts          # RedfinTransport interface
-  transport-fetchproxy.ts # adapter over @fetchproxy/server's FetchproxyServer
+  transport-fetchproxy.ts # thin class over @chrischall/mcp-utils/fetchproxy's
+                        #   createFetchproxyTransport verb adapter (fetch/
+                        #   runProbe/status); keeps the redfin startup banner
   client.ts             # RedfinClient.fetchHtml / fetchStingrayJson
                         #   + sign-in detection (WAF challenge / /login redirect)
                         #   + stripStingrayPrefix helper

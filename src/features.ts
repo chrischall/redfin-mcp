@@ -10,14 +10,15 @@
  * helper reconciling the five cohort implementations. We re-export it
  * here so existing consumers keep importing from `../features.js`.
  *
- * `loadCommunities` stays local — it does filesystem I/O (reads a JSON
- * file named by `REDFIN_COMMUNITIES_FILE`), which would break
- * realty-core's no-I/O invariant. It resolves the community vocabulary
- * that feeds `extractFeatures`'s `communities` argument.
+ * `loadCommunities` stays here (not realty-core) because it does
+ * filesystem I/O (reads a JSON file named by `REDFIN_COMMUNITIES_FILE`),
+ * which would break realty-core's no-I/O invariant. It's now a thin
+ * binding over the shared `createCachedJsonArrayLoader` from
+ * `@chrischall/mcp-utils` (see below) and resolves the community
+ * vocabulary that feeds `extractFeatures`'s `communities` argument.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
-import { readEnvVar } from '@chrischall/mcp-utils';
+import { createCachedJsonArrayLoader } from '@chrischall/mcp-utils';
 import { extractFeatures, type ExtractedFeatures } from '@chrischall/realty-core';
 
 export { extractFeatures };
@@ -41,54 +42,21 @@ export const DEFAULT_COMMUNITIES: string[] = [
   'Charter Hills',
 ];
 
-let cachedCommunities: string[] | null = null;
-let cachedPath: string | null = null;
-
 /**
  * Resolve the active community vocabulary. Reads
  * `REDFIN_COMMUNITIES_FILE` (expects a JSON string array). Falls back
  * to `DEFAULT_COMMUNITIES` when unset, the file is missing, or the
  * JSON is malformed (with a stderr warning so misconfiguration is
  * visible). Cached per process keyed by the env-var value.
+ *
+ * Backed by the shared `createCachedJsonArrayLoader` from
+ * `@chrischall/mcp-utils` (the env-named JSON-string-array file loader the
+ * redfin/zillow/homes/onehome cohort each hand-rolled). It does the
+ * `readEnvVar` placeholder-hardened lookup, parse, positive cache, and
+ * negative-cache-on-missing/invalid for us.
  */
-export function loadCommunities(): string[] {
-  // `readEnvVar` (from @chrischall/mcp-utils) trims and treats
-  // whitespace-only / `'undefined'` / `'null'` / unsubstituted `${...}`
-  // placeholders as unset — hardening over the bare `?.trim()` for hosts
-  // that forward an un-expanded `.mcp.json` env block.
-  const path = readEnvVar('REDFIN_COMMUNITIES_FILE');
-  if (!path) {
-    cachedCommunities = null;
-    cachedPath = null;
-    return DEFAULT_COMMUNITIES;
-  }
-  if (cachedCommunities && cachedPath === path) {
-    return cachedCommunities;
-  }
-  if (!existsSync(path)) {
-    console.error(
-      `[redfin-mcp] REDFIN_COMMUNITIES_FILE="${path}" not found — falling back to DEFAULT_COMMUNITIES.`
-    );
-    return DEFAULT_COMMUNITIES;
-  }
-  try {
-    const raw = readFileSync(path, 'utf8');
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed) || !parsed.every((s) => typeof s === 'string')) {
-      console.error(
-        `[redfin-mcp] REDFIN_COMMUNITIES_FILE="${path}" must be a JSON string array — falling back to DEFAULT_COMMUNITIES.`
-      );
-      return DEFAULT_COMMUNITIES;
-    }
-    cachedCommunities = parsed;
-    cachedPath = path;
-    return cachedCommunities;
-  } catch (err) {
-    console.error(
-      `[redfin-mcp] failed to load REDFIN_COMMUNITIES_FILE="${path}": ${
-        err instanceof Error ? err.message : String(err)
-      } — falling back to DEFAULT_COMMUNITIES.`
-    );
-    return DEFAULT_COMMUNITIES;
-  }
-}
+export const loadCommunities: () => string[] = createCachedJsonArrayLoader({
+  envVar: 'REDFIN_COMMUNITIES_FILE',
+  defaults: DEFAULT_COMMUNITIES,
+  label: 'redfin-mcp',
+});
