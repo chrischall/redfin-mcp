@@ -1,47 +1,62 @@
 // Constructor-options tests for FetchproxyTransport. Split out from
 // transport-fetchproxy.test.ts because asserting on the options object
-// passed to `new FetchproxyServer(...)` requires a hoisted vi.mock of
+// passed into the verb-adapter factory requires a hoisted vi.mock of
 // '@chrischall/mcp-utils/fetchproxy' (the subpath the adapter now imports
-// FetchproxyServer from), which would otherwise interfere with the
-// installInner() stubbing pattern used by the main suite.
+// `createFetchproxyTransport` from), which would otherwise interfere with
+// the installInner() stubbing pattern used by the main suite.
+//
+// The class delegates its FetchproxyServer construction to
+// `createFetchproxyTransport` (the 0.8+ verb adapter), so the opts that
+// used to be asserted on `new FetchproxyServer(...)` are now asserted on
+// the factory call — the factory forwards the full FetchproxyServerOpts
+// verbatim, so the same knobs (defaultSubdomain, fetchTimeoutMs,
+// keepAliveIntervalMs) ride through.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { FetchproxyServerOpts } from '@chrischall/mcp-utils/fetchproxy';
+import type { CreateFetchproxyTransportOptions } from '@chrischall/mcp-utils/fetchproxy';
 
-const constructorCalls: FetchproxyServerOpts[] = [];
+const factoryCalls: CreateFetchproxyTransportOptions[] = [];
 
 vi.mock('@chrischall/mcp-utils/fetchproxy', async () => {
   const actual =
     await vi.importActual<typeof import('@chrischall/mcp-utils/fetchproxy')>(
       '@chrischall/mcp-utils/fetchproxy'
     );
-  class MockFetchproxyServer {
-    public role: string | null = 'mock';
-    constructor(opts: FetchproxyServerOpts) {
-      constructorCalls.push(opts);
-    }
-    // eslint-disable-next-line @typescript-eslint/no-empty-function -- test stub
-    async listen(): Promise<void> {}
-    // eslint-disable-next-line @typescript-eslint/no-empty-function -- test stub
-    async close(): Promise<void> {}
-  }
-  return { ...actual, FetchproxyServer: MockFetchproxyServer };
+  return {
+    ...actual,
+    createFetchproxyTransport: (opts: CreateFetchproxyTransportOptions) => {
+      factoryCalls.push(opts);
+      // A minimal stand-in — these tests only assert on the opts.
+      return { role: 'mock' };
+    },
+  };
 });
 
 beforeEach(() => {
-  constructorCalls.length = 0;
+  factoryCalls.length = 0;
 });
 
 describe('FetchproxyTransport — constructor options', () => {
-  it('does NOT pass keepAliveIntervalMs — relies on the 0.10.0 server-side 25s default (fetchproxy#72)', async () => {
+  it('passes defaultSubdomain:www to the verb adapter (matches the old per-call subdomain)', async () => {
     const { FetchproxyTransport } = await import(
       '../src/transport-fetchproxy.js'
     );
     new FetchproxyTransport({ version: '0.0.0-test' });
-    expect(constructorCalls.length).toBe(1);
-    // 0.10.0 promoted keepAliveIntervalMs to a 25_000ms default — the
-    // whole consumer cohort had been opting into exactly that value, so
-    // we stopped forwarding it. Behavior is identical (SW kept resident).
-    expect(constructorCalls[0]!.keepAliveIntervalMs).toBeUndefined();
+    expect(factoryCalls.length).toBe(1);
+    expect(factoryCalls[0]!.defaultSubdomain).toBe('www');
+    expect(factoryCalls[0]!.serverName).toBe('redfin-mcp');
+    expect(factoryCalls[0]!.domains).toEqual(['redfin.com']);
+  });
+
+  it('does NOT pass keepAliveIntervalMs — relies on the server-side 25s default (fetchproxy#72)', async () => {
+    const { FetchproxyTransport } = await import(
+      '../src/transport-fetchproxy.js'
+    );
+    new FetchproxyTransport({ version: '0.0.0-test' });
+    expect(factoryCalls.length).toBe(1);
+    // The whole consumer cohort had been opting into exactly the 25_000ms
+    // value, so we stopped forwarding it. Behavior is identical (SW kept
+    // resident).
+    expect(factoryCalls[0]!.keepAliveIntervalMs).toBeUndefined();
   });
 
   it('omits fetchTimeoutMs when not explicitly provided (relies on server-side 30s default)', async () => {
@@ -49,16 +64,16 @@ describe('FetchproxyTransport — constructor options', () => {
       '../src/transport-fetchproxy.js'
     );
     new FetchproxyTransport({ version: '0.0.0-test' });
-    expect(constructorCalls.length).toBe(1);
-    expect(constructorCalls[0]!.fetchTimeoutMs).toBeUndefined();
+    expect(factoryCalls.length).toBe(1);
+    expect(factoryCalls[0]!.fetchTimeoutMs).toBeUndefined();
   });
 
-  it('forwards fetchTimeoutMs to the FetchproxyServer constructor when explicitly provided', async () => {
+  it('forwards fetchTimeoutMs to the verb adapter when explicitly provided', async () => {
     const { FetchproxyTransport } = await import(
       '../src/transport-fetchproxy.js'
     );
     new FetchproxyTransport({ version: '0.0.0-test', fetchTimeoutMs: 20_000 });
-    expect(constructorCalls.length).toBe(1);
-    expect(constructorCalls[0]!.fetchTimeoutMs).toBe(20_000);
+    expect(factoryCalls.length).toBe(1);
+    expect(factoryCalls[0]!.fetchTimeoutMs).toBe(20_000);
   });
 });

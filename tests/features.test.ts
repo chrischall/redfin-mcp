@@ -235,7 +235,12 @@ describe('loadCommunities', () => {
   it('returns DEFAULT_COMMUNITIES + warns when file does not exist', () => {
     process.env.REDFIN_COMMUNITIES_FILE = '/no/such/path/communities.json';
     expect(loadCommunities()).toEqual(DEFAULT_COMMUNITIES);
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/not found/));
+    // The shared loader reads the file directly and turns the missing-file
+    // read error into a negative-cached fallback, so the warning is the
+    // generic "failed to load … — falling back to defaults" rather than a
+    // dedicated "not found" message. Same observable behavior (defaults +
+    // a stderr warning).
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/failed to load/));
   });
 
   it('loads the JSON array when valid', () => {
