@@ -35,6 +35,7 @@ import { registerGetByAddressTools } from './tools/get-by-address.js';
 import { registerHealthcheckTools } from './tools/healthcheck.js';
 import { registerBulkGetTools } from './tools/bulk-get.js';
 import { registerResolveAddressesTools } from './tools/resolve-addresses.js';
+import { createSessionRegistry } from '@chrischall/mcp-utils/session';
 import { registerSessionTools } from './tools/sessions.js';
 
 const VERSION = '0.9.2'; // x-release-please-version
@@ -48,6 +49,12 @@ const client = new RedfinClient({ transport });
 // Bring the bridge up BEFORE runMcp connects stdio (deferred-config-error
 // pattern — a failure here surfaces before any tool call).
 await client.start();
+
+// Process-local session registry shared with the session tools. Constructed
+// here (not in a registrar) so the same instance is closure-captured below —
+// future per-session routing consumers (saved-data tools) would read the
+// active session from this same registry.
+const sessions = createSessionRegistry();
 
 await runMcp({
   name: 'redfin-mcp',
@@ -69,7 +76,7 @@ await runMcp({
     (server) => registerHealthcheckTools(server, client),
     (server) => registerBulkGetTools(server, client),
     (server) => registerResolveAddressesTools(server, client),
-    (server) => registerSessionTools(server),
+    (server) => registerSessionTools(server, sessions),
   ],
   banner:
     `[redfin-mcp] v${VERSION} — WebSocket bridge via @fetchproxy/server on 127.0.0.1:${port ?? 37149}. ` +
