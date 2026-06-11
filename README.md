@@ -1,5 +1,9 @@
 # redfin-mcp
 
+[![CI](https://github.com/chrischall/redfin-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/chrischall/redfin-mcp/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/redfin-mcp)](https://www.npmjs.com/package/redfin-mcp)
+[![license](https://img.shields.io/npm/l/redfin-mcp)](LICENSE)
+
 Redfin real-estate access as an MCP server for Claude — search listings, fetch property details, market reports, and your saved homes/searches via natural language.
 
 > ⚠️ Redfin does not publish a public consumer API. This server uses the same private `/stingray/...` endpoints the redfin.com web app uses, routed through your own signed-in browser tab via the [fetchproxy](https://github.com/chrischall/fetchproxy) extension. Every request acts on behalf of your existing session — your cookies, your TLS, your JS context — exactly as if you'd clicked it in the browser yourself. Treat this as informal use of Redfin's website. Use at your own discretion.
