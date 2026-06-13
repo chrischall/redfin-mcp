@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.4](https://github.com/chrischall/redfin-mcp/compare/v0.9.3...v0.9.4) (2026-06-13)
+
+
+### Bug Fixes
+
+* bot PRs bypass the CI gate unconditionally (upstream curtaincall[#86](https://github.com/chrischall/redfin-mcp/issues/86) review) ([#122](https://github.com/chrischall/redfin-mcp/issues/122)) ([d8051a4](https://github.com/chrischall/redfin-mcp/commit/d8051a4404ac7a58c4b3355f8ea2a4d3fb9f6c63))
+
+
+### Documentation
+
+* add MIT LICENSE file and README badges ([#119](https://github.com/chrischall/redfin-mcp/issues/119)) ([f7d02ec](https://github.com/chrischall/redfin-mcp/commit/f7d02ece25b9362b22ca23a16821cd5a1b5fa480))
+
 ## [0.9.3](https://github.com/chrischall/redfin-mcp/compare/v0.9.2...v0.9.3) (2026-06-10)
 
 
