@@ -4,7 +4,7 @@ Guidance for Claude working in this repo.
 
 ## TL;DR
 
-v0.1.0: Redfin MCP server. Default and only transport: localhost WebSocket via [`@fetchproxy/server`](https://github.com/chrischall/fetchproxy) — the companion browser extension is installed separately rather than embedded. Every HTTP call to redfin.com is dispatched through the user's signed-in Chrome tab — each request rides their existing session (cookies, TLS, JS context) exactly as if they'd clicked it themselves.
+Redfin MCP server. Default and only transport: localhost WebSocket via [`@fetchproxy/server`](https://github.com/chrischall/fetchproxy) — the companion browser extension is installed separately rather than embedded. Every HTTP call to redfin.com is dispatched through the user's signed-in Chrome tab — each request rides their existing session (cookies, TLS, JS context) exactly as if they'd clicked it themselves.
 
 This is a "Pattern A" fetchproxy MCP (every call rides through fetchproxy), not "Pattern B" (one bootstrap call then direct fetch). Redfin validates each request at the session level, so the in-session routing has to be per-call.
 
@@ -19,7 +19,11 @@ This is a "Pattern A" fetchproxy MCP (every call rides through fetchproxy), not 
 | `redfin_get_market_report` | `tools/market.ts` | `GET /stingray/api/region/<region_type>/<region_id>/<property_type>/market-trends` | read |
 | `redfin_get_price_history` | `tools/history.ts` | `GET /stingray/api/home/details/belowTheFold?propertyId=…&listingId=…` | read |
 | `redfin_compare_properties` | `tools/compare.ts` | `GET /stingray/api/home/details/aboveTheFold?…` ×N (concurrent) | read |
+| `redfin_bulk_get` | `tools/bulk-get.ts` | per-target ATF/BTF (+optional `/home/<id>` redirect resolve) ×N (≤200, concurrent, per-row errors, hard deadline) | read |
+| `redfin_resolve_addresses` | `tools/resolve-addresses.ts` | `GET /stingray/do/location-autocomplete?location=…` ×N (≤100, concurrent) → URL/home_id per row | read |
 | `redfin_get_climate_risk` | `tools/climate.ts` | `GET /<homedetails-path>` HTML — extract `floodData`/`fireData`/`heatData` blocks | read |
+| `redfin_get_climate_risk_bulk` | `tools/climate.ts` | per-property climate HTML extract ×N (≤100, concurrent) — preserves order, per-row `available:false` | read |
+| `redfin_get_area_climate_baseline` | `tools/climate.ts` | climate HTML extract over 2–10 sample URLs → averaged baseline + shared `cluster_id` | read |
 | `redfin_get_comparable_rentals` | `tools/rentals.ts` | `GET /stingray/api/home/comparable-rentals?propertyId=…&rentEstimateLow=…&rentEstimateHigh=…` | read |
 | `redfin_get_saved_homes` | `tools/saved.ts` | (a) `GET /myredfin/favorites` HTML → regex propertyIds<br>(b) `GET /stingray/do/api/v3/favorites/homecards?b=<csv-ids>` — image URLs constructed locally from mlsId+dataSourceId | read (auth) |
 | `redfin_get_saved_searches` | `tools/saved.ts` | `GET /myredfin/saved-searches` HTML → regex region URLs | read (auth) |
@@ -70,7 +74,9 @@ src/
     photos.ts           # redfin_get_property_photos (mediaBrowserInfo gallery)
     history.ts          # redfin_get_price_history (belowTheFold events)
     market.ts           # redfin_get_market_report (market-trends endpoint)
-    climate.ts          # redfin_get_climate_risk (flood/fire/heat HTML extract)
+    climate.ts          # redfin_get_climate_risk + _climate_risk_bulk
+                        #   + _get_area_climate_baseline (flood/fire/heat
+                        #   First Street HTML extract; bulk + cluster baseline)
     rentals.ts          # redfin_get_comparable_rentals
     saved.ts            # redfin_get_saved_homes + redfin_get_saved_searches
                         #   (HTML extract → optional homecards API)
@@ -192,10 +198,23 @@ The **PR title MUST be a Conventional Commit**, written user-facing (`fix(scope)
 
 **Don't run `gh pr merge` yourself.** The automation does it:
 
-1. `pr-auto-review.yml` runs a Claude review on every PR **except** the release-please release PR (which it deliberately skips). On a `pass` verdict it adds the `ready-to-merge` label.
+1. `pr-auto-review.yml` runs a Claude review on every PR **except** the release-please release PR (which it deliberately skips). On a `pass` OR `warn` (nits-only) verdict it adds the `ready-to-merge` label; a `warn` or `fail` also opens/updates an `auto-review-followup` issue capturing the findings. Only `fail` blocks the merge.
 2. `auto-merge.yml`, on the `ready-to-merge` label (or on a dependabot PR), arms `gh pr merge --auto --squash`. The moment CI is green the PR squash-merges itself.
 
-For ordinary feature/fix PRs, opening with `gh pr create --label <label>` (or `--label ignore-for-release` for chores not worth a release-notes line) is the whole job. If Claude's verdict was `warn`/`fail` but you've decided to ship anyway, add the label yourself: `gh pr edit <num> --add-label ready-to-merge`.
+For ordinary feature/fix PRs, opening with `gh pr create --label <label>` (or `--label ignore-for-release` for chores not worth a release-notes line) is the whole job. If Claude's verdict was `fail` but you've decided to ship anyway, add the label yourself: `gh pr edit <num> --add-label ready-to-merge`.
+
+### Auto-review follow-up issues
+
+When a PR's auto-review verdict is `warn` or `fail`, the `chrischall/workflows` pipeline opens or updates a single `auto-review-followup` issue ("Auto-review follow-ups for PR #N") whose checklist captures every finding, and links it from the PR's `<!-- auto-review-verdict -->` comment (`📋 Tracking follow-ups: #N`). `warn` (nits only) still auto-merges — the issue carries the nits forward, so most nits are fixed in a *later* PR; `fail` blocks until the important findings are addressed on the PR itself.
+
+When asked to address the auto-review comments / review findings on a PR:
+
+1. Read the verdict comment, open the linked `auto-review-followup` issue, and treat its checklist as the work list (alongside any inline review comments).
+2. Resolve each item, checking off only what you've **verified** is genuinely fixed.
+3. If every item is resolved on the current PR, add `Closes #<issue>` to that PR's body so the merge closes it; if some are deferred, check off only the resolved ones and leave the issue open.
+4. For nits whose `warn` PR already auto-merged, address them in a follow-up PR that references `Closes #<issue>`.
+
+(Mirrors the fleet-wide convention in `~/.claude/CLAUDE.md`.)
 
 ### PR timing — only open when the feature is done
 
