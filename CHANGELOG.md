@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.5](https://github.com/chrischall/redfin-mcp/compare/v0.9.4...v0.9.5) (2026-06-15)
+
+
+### Documentation
+
+* correct .env.example service name and document all env vars ([#133](https://github.com/chrischall/redfin-mcp/issues/133)) ([5065121](https://github.com/chrischall/redfin-mcp/commit/5065121c24da3c3f91d2a24cdd5e5307d5848ec4))
+* refresh CLAUDE.md tool surface + add auto-review follow-up convention ([#132](https://github.com/chrischall/redfin-mcp/issues/132)) ([31bc31a](https://github.com/chrischall/redfin-mcp/commit/31bc31a3d9fe028ae1ece4620b023edb8c9116c1))
+* require Conventional Commit PR titles for release-please ([#128](https://github.com/chrischall/redfin-mcp/issues/128)) ([9c1a24b](https://github.com/chrischall/redfin-mcp/commit/9c1a24bc8f1a74145a51fe2dda5e9d3c6ebaea72))
+
 ## [0.9.4](https://github.com/chrischall/redfin-mcp/compare/v0.9.3...v0.9.4) (2026-06-13)
 
 
