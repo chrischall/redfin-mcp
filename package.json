@@ -1,6 +1,6 @@
 {
   "name": "redfin-mcp",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "mcpName": "io.github.chrischall/redfin-mcp",
   "description": "Redfin MCP server for Claude — developed and maintained by AI (Claude Code)",
   "author": "Claude Code (AI) <https://www.anthropic.com/claude>",
