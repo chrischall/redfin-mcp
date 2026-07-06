@@ -53,8 +53,22 @@ describe('RedfinClient', () => {
         url: 'https://www.redfin.com/login',
       })),
     });
-    await expect(client.fetchHtml('/myredfin/favorites')).rejects.toBeInstanceOf(
-      SessionNotAuthenticatedError
+    const err = await client.fetchHtml('/myredfin/favorites').then(
+      () => {
+        throw new Error('expected fetchHtml to reject');
+      },
+      (e: unknown) => e
+    );
+    // Shared mcp-utils error, parameterized with the service + sign-in host.
+    expect(err).toBeInstanceOf(SessionNotAuthenticatedError);
+    expect((err as Error).message).toContain('Not signed in to Redfin.');
+    expect((err as Error).message).toContain(
+      'Open redfin.com in your browser and sign in, then try again.'
+    );
+    // The shared class carries a machine-readable `hint` the tool
+    // surface can present separately (the old local class had none).
+    expect((err as SessionNotAuthenticatedError).hint).toBe(
+      'Open redfin.com in your browser and sign in, then try again.'
     );
   });
 

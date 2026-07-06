@@ -12,7 +12,10 @@
 //
 // Error mapping (non-2xx, sign-in interstitial, empty 204 body) lives
 // here so tool authors never have to think about it.
-import { formatApiError } from '@chrischall/mcp-utils';
+import {
+  formatApiError,
+  SessionNotAuthenticatedError,
+} from '@chrischall/mcp-utils';
 import type {
   BridgeProbeResult,
   BridgeStatus,
@@ -20,15 +23,13 @@ import type {
   RedfinTransport,
 } from './transport.js';
 
-export class SessionNotAuthenticatedError extends Error {
-  constructor() {
-    super(
-      'Not signed in to Redfin. Open redfin.com in your browser and sign in, then try again. ' +
-        'Saved searches, saved homes, and recent activity require a signed-in session.'
-    );
-    this.name = 'SessionNotAuthenticatedError';
-  }
-}
+// The canonical parameterized SessionNotAuthenticatedError lives in
+// @chrischall/mcp-utils; re-exported so existing `./client.js`
+// importers keep working. Thrown below as
+// `new SessionNotAuthenticatedError('Redfin', 'redfin.com')` — the
+// message names Redfin + the sign-in host and the instance carries a
+// machine-readable `hint`.
+export { SessionNotAuthenticatedError };
 
 export interface RedfinClientOptions {
   /** Transport used to relay fetches to the user's browser. */
@@ -186,7 +187,8 @@ export class RedfinClient {
       (result.body.includes('awswaf.com') &&
         result.body.includes('challenge.js') &&
         result.body.length < 80_000);
-    if (looksLikeSignIn) throw new SessionNotAuthenticatedError();
+    if (looksLikeSignIn)
+      throw new SessionNotAuthenticatedError('Redfin', 'redfin.com');
   }
 }
 
