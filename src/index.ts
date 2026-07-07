@@ -38,7 +38,7 @@ import { registerResolveAddressesTools } from './tools/resolve-addresses.js';
 import { createSessionRegistry } from '@chrischall/mcp-utils/session';
 import { registerSessionTools } from './tools/sessions.js';
 
-const VERSION = '0.9.5'; // x-release-please-version
+const VERSION = '0.9.6'; // x-release-please-version
 
 const portRaw = readEnvVar('REDFIN_WS_PORT');
 const port = portRaw ? Number(portRaw) : undefined;

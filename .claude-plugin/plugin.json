@@ -1,7 +1,7 @@
 {
   "name": "redfin-mcp",
   "displayName": "Redfin",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "description": "Redfin real-estate access for Claude — search listings, get property details, market reports, your saved homes",
   "author": {
     "name": "Chris Hall",
