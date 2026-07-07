@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.6](https://github.com/chrischall/redfin-mcp/compare/v0.9.5...v0.9.6) (2026-07-07)
+
+
+### Bug Fixes
+
+* bump @chrischall/mcp-utils to 0.12.0 (ReDoS + secret-redaction security fixes + detail hook / scrape subpath) ([#144](https://github.com/chrischall/redfin-mcp/issues/144)) ([fc0316a](https://github.com/chrischall/redfin-mcp/commit/fc0316a908702ac4a99be03ff7210e2d27a69d60))
+
+
+### Refactor
+
+* adopt shared SessionNotAuthenticatedError ([#141](https://github.com/chrischall/redfin-mcp/issues/141)) ([b049e69](https://github.com/chrischall/redfin-mcp/commit/b049e691d56b3e4e3f48f4d4550b8601433fe63f))
+
 ## [0.9.5](https://github.com/chrischall/redfin-mcp/compare/v0.9.4...v0.9.5) (2026-06-15)
 
 
