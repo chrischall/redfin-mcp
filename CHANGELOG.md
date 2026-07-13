@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/chrischall/redfin-mcp/compare/v0.9.6...v0.10.0) (2026-07-13)
+
+
+### Features
+
+* **skill:** add redfin fpx access skill ([#149](https://github.com/chrischall/redfin-mcp/issues/149)) ([a88b7e4](https://github.com/chrischall/redfin-mcp/commit/a88b7e4315863dfe7490ac45d2436188dbe498d3))
+
+
+### Refactor
+
+* **skill:** move root SKILL.md into skills/, point plugin.json at ./skills/ ([#151](https://github.com/chrischall/redfin-mcp/issues/151)) ([ebf2c14](https://github.com/chrischall/redfin-mcp/commit/ebf2c14f09c54048831bb67128a755afb9a15af6))
+
 ## [0.9.6](https://github.com/chrischall/redfin-mcp/compare/v0.9.5...v0.9.6) (2026-07-07)
 
 
