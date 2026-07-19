@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/chrischall/redfin-mcp/compare/v0.10.0...v0.10.1) (2026-07-19)
+
+
+### Documentation
+
+* replace duplicated fleet policy with a pointer ([#154](https://github.com/chrischall/redfin-mcp/issues/154)) ([52f90fd](https://github.com/chrischall/redfin-mcp/commit/52f90fd4d7967b538946d9c2b8c79e601e485a76))
+
 ## [0.10.0](https://github.com/chrischall/redfin-mcp/compare/v0.9.6...v0.10.0) (2026-07-13)
 
 
