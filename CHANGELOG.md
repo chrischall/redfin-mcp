@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/chrischall/redfin-mcp/compare/v0.10.1...v0.10.2) (2026-07-30)
+
+
+### Bug Fixes
+
+* **deps:** bump @fetchproxy/* to 1.7.0 and @chrischall/mcp-utils to 0.14.0 ([#163](https://github.com/chrischall/redfin-mcp/issues/163)) ([498ddd0](https://github.com/chrischall/redfin-mcp/commit/498ddd04f377e53ec126bf2fc8b32778b9440111))
+
 ## [0.10.1](https://github.com/chrischall/redfin-mcp/compare/v0.10.0...v0.10.1) (2026-07-19)
 
 
