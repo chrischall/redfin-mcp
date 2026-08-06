@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.3](https://github.com/chrischall/redfin-mcp/compare/v0.10.2...v0.10.3) (2026-08-06)
+
+
+### Bug Fixes
+
+* **deps:** move to @fetchproxy/server 2.0.0 for the v3 handshake ([#171](https://github.com/chrischall/redfin-mcp/issues/171)) ([d2c8ec8](https://github.com/chrischall/redfin-mcp/commit/d2c8ec8e277393cdb63bad3b1b71bab7d2797be1))
+
 ## [0.10.2](https://github.com/chrischall/redfin-mcp/compare/v0.10.1...v0.10.2) (2026-07-30)
 
 
