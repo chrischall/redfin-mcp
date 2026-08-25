@@ -1,0 +1,30 @@
+version: 1
+name: Redfin
+slug: redfin
+summary: >-
+  Redfin real-estate access for Claude — search listings, fetch property
+  details, market reports, saved homes
+#
+# Hosting note (a comment, not user-facing summary text): this is a
+# BROWSER-BRIDGE MCP — it reaches its site through the user's signed-in
+# tab via the fetchproxy bridge. A bridged registration also needs runtime
+# `fly-shared`, `bridge: true` and a `bridgePortEnv`, which are registration
+# fields this manifest has no schema for (set them over the control API).
+# `state.dataDir` below is required for `bridge`.
+env:
+  - name: REDFIN_WS_PORT
+    required: false
+    help: >-
+      Override the fetchproxy WebSocket port (default 37149).
+state:
+  dataDir: true
+  reason: >-
+    The fetchproxy identity lives at $HOME/.fetchproxy/identity/<name>.json
+    and the pair code derives from it. Without a persistent $HOME every cold
+    start mints a fresh identity and re-prompts pairing in the browser; the
+    API refuses bridge without it.
+egress:
+  allow:
+    # Only hosts the SERVER process actually fetches. Hosts that appear
+    # solely in a URL this server BUILDS and returns are excluded.
+    - redfin.com
