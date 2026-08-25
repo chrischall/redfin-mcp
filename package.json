@@ -28,7 +28,8 @@
     ".claude-plugin",
     ".mcp.json",
     "server.json",
-    "skills"
+    "skills",
+    "mint.yaml"
   ],
   "scripts": {
     "build": "tsc --noEmit && npm run bundle",
