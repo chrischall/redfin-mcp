@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.4](https://github.com/chrischall/redfin-mcp/compare/v0.10.3...v0.10.4) (2026-08-26)
+
+
+### Documentation
+
+* **skill:** declare the name this skill actually publishes under ([#181](https://github.com/chrischall/redfin-mcp/issues/181)) ([5656665](https://github.com/chrischall/redfin-mcp/commit/56566651062a369b214bc6eb58b95969f49c0c52))
+
 ## [0.10.3](https://github.com/chrischall/redfin-mcp/compare/v0.10.2...v0.10.3) (2026-08-06)
 
 
