@@ -1,5 +1,5 @@
 ---
-name: redfin-mcp
+name: redfin
 description: Look up real-estate listings, property details, market reports, and your saved homes/searches on Redfin via MCP. Triggers on phrases like "find homes on redfin in", "redfin property details for", "show my saved redfin homes", "what's my saved redfin search seeing", "what does redfin say about", "redfin market report for", or any request involving Redfin properties, prices, or your saved Redfin activity. Requires redfin-mcp installed and the fetchproxy extension active (see Setup below).
 ---
 
