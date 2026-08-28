@@ -24,7 +24,14 @@ state:
     start mints a fresh identity and re-prompts pairing in the browser; the
     API refuses bridge without it.
 egress:
-  allow:
-    # Only hosts the SERVER process actually fetches. Hosts that appear
-    # solely in a URL this server BUILDS and returns are excluded.
-    - redfin.com
+  # Only hosts the SERVER process actually fetches. Hosts that appear
+  # solely in a URL this server BUILDS and returns are excluded.
+  #
+  # Empty on purpose: this is a pure bridge MCP. Every redfin.com request
+  # (www.redfin.com pages/APIs, the /robots.txt probe) runs as
+  # window.fetch() in the user's signed-in tab via fetchproxy; the server
+  # process only accepts the extension's loopback WebSocket and never
+  # dials out itself. There is no direct (non-bridge) mode.
+  # `ssl.cdn-redfin.com` and `www.redfin.com` appear only in photo URLs
+  # and deep-links the tools BUILD and return.
+  allow: []
