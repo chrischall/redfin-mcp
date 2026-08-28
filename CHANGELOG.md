@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.5](https://github.com/chrischall/redfin-mcp/compare/v0.10.4...v0.10.5) (2026-08-28)
+
+
+### Bug Fixes
+
+* **egress:** declare every host the server dials in mint.yaml ([#184](https://github.com/chrischall/redfin-mcp/issues/184)) ([37c3b28](https://github.com/chrischall/redfin-mcp/commit/37c3b287ab29da7020ee2aa64e284b532579b757))
+
 ## [0.10.4](https://github.com/chrischall/redfin-mcp/compare/v0.10.3...v0.10.4) (2026-08-26)
 
 
