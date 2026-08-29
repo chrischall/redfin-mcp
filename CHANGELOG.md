@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/chrischall/redfin-mcp/compare/v0.10.5...v0.11.0) (2026-08-29)
+
+
+### Features
+
+* **deps:** take @fetchproxy/server 2.2.0 so the concentrator can bind its sandbox address ([#188](https://github.com/chrischall/redfin-mcp/issues/188)) ([7db7afe](https://github.com/chrischall/redfin-mcp/commit/7db7afe0ad0ddc25a754bc4c71d05aeab012d618))
+
 ## [0.10.5](https://github.com/chrischall/redfin-mcp/compare/v0.10.4...v0.10.5) (2026-08-28)
 
 
