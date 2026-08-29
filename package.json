@@ -43,7 +43,7 @@
   "dependencies": {
     "@chrischall/mcp-utils": "^0.17.1",
     "@chrischall/realty-core": "^0.4.1",
-    "@fetchproxy/server": "^2.0.0",
+    "@fetchproxy/server": "^2.2.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "zod": "^4.4.3"
   },
