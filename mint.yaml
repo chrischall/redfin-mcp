@@ -16,6 +16,16 @@ env:
     required: false
     help: >-
       Override the fetchproxy WebSocket port (default 37149).
+  - name: REDFIN_COMMUNITIES_FILE
+    required: false
+    help: >-
+      Absolute path to a JSON array of community names, replacing the built-in
+      vocabulary (which is specific to the Lake Lure / mountain-NC market).
+      Set this to use this server in any other market.
+  - name: REDFIN_DEBUG
+    required: false
+    help: >-
+      Set to 1 to log verbose request detail to stderr.
 state:
   dataDir: true
   reason: >-
