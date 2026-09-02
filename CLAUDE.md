@@ -29,7 +29,7 @@ This is a "Pattern A" fetchproxy MCP (every call rides through fetchproxy), not 
 | `redfin_get_saved_searches` | `tools/saved.ts` | `GET /myredfin/saved-searches` HTML → regex region URLs | read (auth) |
 | `redfin_calculate_mortgage` | `tools/mortgage.ts` | (local; no network) | read |
 | `redfin_calculate_affordability` | `tools/affordability.ts` | (local; no network) | read |
-| `redfin_healthcheck` | `tools/healthcheck.ts` | `GET /robots.txt` round-trip through fetchproxy + bridge status | read |
+| `redfin_healthcheck` | `tools/healthcheck.ts` | `GET /robots.txt` round-trip through fetchproxy + bridge status incl. the extension link (`session_state` / `pending_pair_code` / `extension_connected`) — the shared `registerBridgeHealthcheckTool` from `@chrischall/mcp-utils/fetchproxy` | read |
 | `redfin_register_session` | `tools/sessions.ts` | (local; no network) — params: `account_identity` (**required**, min 1), `auth_expires_at?` | write (registry) |
 | `redfin_set_active_session` | `tools/sessions.ts` | (local; no network) — param: `session_id` | write (registry) |
 | `redfin_get_session_context` | `tools/sessions.ts` | (local; no network) — no params | read |
@@ -83,7 +83,10 @@ src/
     resolve-addresses.ts # redfin_resolve_addresses (bulk address → URL/home_id)
     mortgage.ts         # redfin_calculate_mortgage (local PITI; realty-core)
     affordability.ts    # redfin_calculate_affordability (local DTI; realty-core)
-    healthcheck.ts      # redfin_healthcheck (bridge probe)
+    healthcheck.ts      # redfin_healthcheck — thin wrapper over
+                        #   @chrischall/mcp-utils/fetchproxy's
+                        #   registerBridgeHealthcheckTool (prefix 'redfin',
+                        #   probe /robots.txt via client.fetchHtml)
     sessions.ts         # thin wrapper over @chrischall/mcp-utils/session's
                         #   registerSessionTools (prefix 'redfin') —
                         #   redfin_{register,set_active,get_session_context}.
