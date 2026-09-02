@@ -38,6 +38,7 @@ import {
   createFetchproxyTransport,
   type FetchproxyTransport as FetchproxyVerbTransport,
   FetchproxyBridgeDownError,
+  FetchproxySessionNotReadyError,
   FetchproxyTimeoutError,
   FetchproxyProtocolError,
   classifyBridgeError,
@@ -55,6 +56,7 @@ import type {
 // still `import { FetchproxyBridgeDownError } from './transport-fetchproxy.js'`.
 export {
   FetchproxyBridgeDownError,
+  FetchproxySessionNotReadyError,
   FetchproxyTimeoutError,
   FetchproxyProtocolError,
   classifyBridgeError,
