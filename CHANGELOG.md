@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/chrischall/redfin-mcp/compare/v0.11.0...v0.12.0) (2026-09-02)
+
+
+### Features
+
+* **healthcheck:** adopt the shared bridge healthcheck and report the extension link state ([#200](https://github.com/chrischall/redfin-mcp/issues/200)) ([9a9fbe1](https://github.com/chrischall/redfin-mcp/commit/9a9fbe11d60c0fbaa15b42dc802f771c7c68ad39))
+
+
+### Documentation
+
+* **mint:** declare REDFIN_COMMUNITIES_FILE and REDFIN_DEBUG in mint.yaml ([#195](https://github.com/chrischall/redfin-mcp/issues/195)) ([a31b004](https://github.com/chrischall/redfin-mcp/commit/a31b0048b9c06c2bda8b1d98b8197e69ee1b3959))
+
 ## [0.11.0](https://github.com/chrischall/redfin-mcp/compare/v0.10.5...v0.11.0) (2026-08-29)
 
 
