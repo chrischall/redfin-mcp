@@ -7,7 +7,7 @@ import {
 } from '@chrischall/mcp-utils/fetchproxy';
 import { runBoundedBatch } from '@chrischall/mcp-utils';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { viewArg, viewResponse } from '../view.js';
 import {
   fetchAndFormatProperty,
   type FormattedProperty,
@@ -159,6 +159,7 @@ export function registerBulkGetTools(
         openWorldHint: true,
       },
       inputSchema: {
+        view: viewArg(),
         targets: z
           .array(
             z
@@ -200,7 +201,7 @@ export function registerBulkGetTools(
           ),
       },
     },
-    async ({ targets, include_description }) => {
+    async ({ targets, include_description, view }) => {
       const targetList = targets as BulkTarget[];
 
       // `runBoundedBatch` (mcp-utils 0.8, hoisted from exactly this pattern):
@@ -245,7 +246,7 @@ export function registerBulkGetTools(
         results: BulkPerProperty[];
       } = { count: results.length, ok, errored, results };
       if (pending > 0) envelope.pending = pending;
-      return textResult(envelope);
+      return viewResponse(view, envelope);
     }
   );
 }

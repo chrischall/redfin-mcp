@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { mapWithConcurrency } from '@chrischall/mcp-utils/fetchproxy';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { minifiedResult } from '../mcp.js';
 import { urlToPath } from '../url.js';
 
 /**
@@ -344,7 +344,7 @@ export function registerClimateTools(
     async ({ url }) => {
       const one = await fetchOneClimate(client, url);
       if (one.error) throw new Error(one.error);
-      return textResult({
+      return minifiedResult({
         url: one.url,
         ...one.result!,
       });
@@ -386,7 +386,7 @@ export function registerClimateTools(
       const cluster_summary = Object.entries(clusters)
         .filter(([, urls]) => urls.length >= 2)
         .map(([cluster_id, urls]) => ({ cluster_id, urls }));
-      return textResult({
+      return minifiedResult({
         count: results.length,
         ok: results.filter((r) => !r.error && r.result?.available).length,
         unavailable: results.filter((r) => r.result && !r.result.available).length,
@@ -425,7 +425,7 @@ export function registerClimateTools(
         .map((r) => r.result)
         .filter((r): r is ClimateRiskReport => !!r && r.available);
       if (available.length === 0) {
-        return textResult({
+        return minifiedResult({
           available: false,
           reason: 'no_first_street_data' as const,
           samples: results,
@@ -452,7 +452,7 @@ export function registerClimateTools(
         if (vals.length === 0) return undefined;
         return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
       };
-      return textResult({
+      return minifiedResult({
         available: true,
         sample_count: available.length,
         cluster_id: baselineClusterId,

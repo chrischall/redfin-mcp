@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { minifiedResult } from '../mcp.js';
 import { resolveAddressWithFallbacks } from '../resolve.js';
 
 /**
@@ -66,13 +66,13 @@ export function registerGetByAddressTools(
         });
       const query = attempts[0] ?? input.address;
       if (!match) {
-        return textResult({
+        return minifiedResult({
           resolved: false,
           query,
           attempts,
         });
       }
-      return textResult({
+      return minifiedResult({
         resolved: true,
         url: match.url,
         home_id: match.home_id,

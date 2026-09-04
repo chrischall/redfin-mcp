@@ -308,4 +308,75 @@ describe('redfin_compare_properties tool', () => {
     expect(parsed.results[0].property?.description).toBe('Cozy cabin.');
     expect(parsed.results[1].property?.description).toBe('Cozy cabin.');
   });
+  /**
+   * `redfin_compare_properties` returns N of exactly the record
+   * `redfin_get_property` returns, so the raw `primary_photo_url` was N times
+   * the waste here — and this tool is capped at 25 rows. The `view` arg has to
+   * reach the NESTED per-row records, not just the envelope, which is the part
+   * a helper-level test of `viewResponse()` cannot observe.
+   */
+  describe('view', () => {
+    const withPhoto = {
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: {
+          streetAddress: 'x',
+          city: 'X',
+          state: 'NY',
+          zip: '11111',
+          latestPriceInfo: { amount: 500 },
+        },
+        mediaBrowserInfo: {
+          photos: [
+            {
+              photoUrls: {
+                fullScreenPhotoUrl:
+                  'https://ssl.cdn-redfin.com/photo/641/bigphoto/849/x_0.jpg',
+              },
+            },
+          ],
+        },
+      },
+    };
+    const twoTargets = [
+      { property_id: 1, listing_id: 10 },
+      { property_id: 2, listing_id: 20 },
+    ];
+
+    it('strips primary_photo_url from every row on the default rung', async () => {
+      mockFetchStingrayJson.mockResolvedValue(withPhoto);
+      const r = await harness.callTool('redfin_compare_properties', {
+        targets: twoTargets,
+      });
+      const parsed = parseToolResult<{
+        count: number;
+        results: Array<{ property?: { primary_photo_url?: string; price?: number } }>;
+      }>(r);
+      // The envelope survives the recursion intact...
+      expect(parsed.count).toBe(2);
+      for (const row of parsed.results) {
+        expect(row.property?.primary_photo_url).toBeUndefined();
+        // ...and so does the data every row exists for.
+        expect(row.property?.price).toBe(500);
+      }
+    });
+
+    it('full keeps it on every row', async () => {
+      mockFetchStingrayJson.mockResolvedValue(withPhoto);
+      const r = await harness.callTool('redfin_compare_properties', {
+        targets: twoTargets,
+        view: 'full',
+      });
+      const parsed = parseToolResult<{
+        results: Array<{ property?: { primary_photo_url?: string } }>;
+      }>(r);
+      expect(
+        parsed.results.every(
+          (row) =>
+            row.property?.primary_photo_url ===
+            'https://ssl.cdn-redfin.com/photo/641/bigphoto/849/x_0.jpg'
+        )
+      ).toBe(true);
+    });
+  });
 });

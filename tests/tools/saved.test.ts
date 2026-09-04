@@ -202,6 +202,94 @@ describe('redfin_get_saved_homes tool', () => {
     expect(parsed.map((h) => h.property_id)).toEqual([100, 200]);
   });
 
+  /**
+   * The regression tests/view.test.ts covers through the standalone
+   * `viewResponse()` helper, re-run through the REAL tool: registerTool's
+   * `inputSchema` (does it even accept `view`?), the handler's destructuring
+   * (does it thread the arg through?), and the `viewResponse` call at the end.
+   *
+   * That wiring is exactly what a helper-level test cannot see. The suite had
+   * 448 passing tests while compact was silently deleting `image_url` and
+   * `thumbnail_url` from every saved-home record, because every homecard
+   * fixture above leaves `mlsId`/`dataSourceId` unset and those two fields
+   * therefore never appear. So this fixture sets them, and asserts on the
+   * constructed URLs the caller would actually lose.
+   */
+  const cardWithPhotos = {
+    propertyId: 300,
+    isFavorite: true,
+    commonHomeData: {
+      url: '/x/y/home/300',
+      priceInfo: { amount: 425_000 },
+      city: 'Hendersonville',
+      state: 'NC',
+      mlsId: '2111124202183295849',
+      dataSourceId: 641,
+      availablePhotos: '0-20:0',
+    },
+  };
+  const IMAGE_URL =
+    'https://ssl.cdn-redfin.com/photo/641/bigphoto/849/2111124202183295849_0.jpg';
+  const THUMBNAIL_URL =
+    'https://ssl.cdn-redfin.com/photo/641/mbphotov3/849/genMid.2111124202183295849_0.jpg';
+
+  const mockOneFavorite = () => {
+    mockFetchHtml.mockResolvedValueOnce('<a href="/x/y/home/300">a</a>');
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: { homecards: [cardWithPhotos] },
+    });
+  };
+
+  it('keeps the constructed image_url/thumbnail_url on the DEFAULT (compact) view', async () => {
+    mockOneFavorite();
+    // No `view` argument at all — the rung a caller gets without asking, and
+    // the one the regression shipped on.
+    const result = await harness.callTool('redfin_get_saved_homes', {});
+    expect(result.isError).toBeFalsy();
+    const [home] = parseToolResult<
+      Array<{ image_url?: string; thumbnail_url?: string; photo_count?: number }>
+    >(result);
+    expect(home.image_url).toBe(IMAGE_URL);
+    expect(home.thumbnail_url).toBe(THUMBNAIL_URL);
+    // `photo_count` is the caller's cue that redfin_get_property_photos has
+    // more; it is a number, so no media rule should ever have reached it.
+    expect(home.photo_count).toBe(21);
+  });
+
+  it('keeps them on an explicit compact too — the schema really accepts `view`', async () => {
+    mockOneFavorite();
+    // Naming the rung explicitly is the half a helper-level test cannot check:
+    // if `view` were missing from `inputSchema`, the SDK would reject the call
+    // outright rather than quietly ignoring the argument.
+    const result = await harness.callTool('redfin_get_saved_homes', {
+      view: 'compact',
+    });
+    expect(result.isError).toBeFalsy();
+    const [home] = parseToolResult<Array<{ image_url?: string }>>(result);
+    expect(home.image_url).toBe(IMAGE_URL);
+  });
+
+  it('full returns the same record untouched', async () => {
+    mockOneFavorite();
+    const result = await harness.callTool('redfin_get_saved_homes', {
+      view: 'full',
+    });
+    const [home] = parseToolResult<
+      Array<{ image_url?: string; thumbnail_url?: string }>
+    >(result);
+    expect(home.image_url).toBe(IMAGE_URL);
+    expect(home.thumbnail_url).toBe(THUMBNAIL_URL);
+  });
+
+  it('emits minified JSON — no formatting whitespace of its own', async () => {
+    mockOneFavorite();
+    const result = await harness.callTool('redfin_get_saved_homes', {});
+    // One line means no indent. The PR's whole size win is this, and it is
+    // only observable on the serialized text, not on the parsed object.
+    expect((result.content as Array<{ text: string }>)[0].text.split('\n')).toHaveLength(1);
+  });
+
   it('returns [] without calling homecards when user has no favorites', async () => {
     mockFetchHtml.mockResolvedValueOnce('<html>no favorites yet</html>');
     const result = await harness.callTool('redfin_get_saved_homes', {});

@@ -510,6 +510,89 @@ describe('redfin_bulk_get tool', () => {
     });
   });
 
+  /**
+   * `redfin_bulk_get` takes up to 200 targets, so it is where the un-adopted
+   * `view` cost the most: 200 raw CDN photo URLs in one response, none of them
+   * readable by the caller. The envelope's counters (`count`/`ok`/`errored`)
+   * are scalars beside the array and must survive the recursion untouched —
+   * a projection that ate one of those would misreport the batch.
+   */
+  describe('view', () => {
+    const mockPhotoAtf = () => {
+      mockFetchStingrayJson.mockImplementation(async (path: string) => {
+        if (path.includes('aboveTheFold')) {
+          return {
+            resultCode: 0,
+            payload: {
+              addressSectionInfo: {
+                streetAddress: '1 Main St',
+                city: 'X',
+                state: 'NC',
+                zip: '28746',
+                latestPriceInfo: { amount: 250_000 },
+              },
+              mediaBrowserInfo: {
+                photos: [
+                  {
+                    photoUrls: {
+                      fullScreenPhotoUrl:
+                        'https://ssl.cdn-redfin.com/photo/641/bigphoto/849/x_0.jpg',
+                    },
+                  },
+                ],
+              },
+            },
+          };
+        }
+        return { resultCode: 0, payload: {} };
+      });
+    };
+    const twoTargets = [
+      { property_id: 1, listing_id: 10 },
+      { property_id: 2, listing_id: 20 },
+    ];
+
+    it('strips primary_photo_url from every row by default, envelope intact', async () => {
+      mockPhotoAtf();
+      const r = await harness.callTool('redfin_bulk_get', { targets: twoTargets });
+      const parsed = parseToolResult<{
+        count: number;
+        ok: number;
+        errored: number;
+        results: Array<{
+          status?: string;
+          property?: { primary_photo_url?: string; price?: number };
+        }>;
+      }>(r);
+      expect(parsed.count).toBe(2);
+      expect(parsed.ok).toBe(2);
+      expect(parsed.errored).toBe(0);
+      for (const row of parsed.results) {
+        expect(row.status).toBe('ok');
+        expect(row.property?.primary_photo_url).toBeUndefined();
+        expect(row.property?.price).toBe(250_000);
+      }
+    });
+
+    it('full keeps it on every row', async () => {
+      mockPhotoAtf();
+      const r = await harness.callTool('redfin_bulk_get', {
+        targets: twoTargets,
+        view: 'full',
+      });
+      const parsed = parseToolResult<{
+        results: Array<{ property?: { primary_photo_url?: string } }>;
+      }>(r);
+      expect(
+        parsed.results.every(
+          (row) =>
+            row.property?.primary_photo_url ===
+            'https://ssl.cdn-redfin.com/photo/641/bigphoto/849/x_0.jpg'
+        )
+      ).toBe(true);
+    });
+  });
+
   it('caps targets at 200', async () => {
     const r = await harness.callTool('redfin_bulk_get', {
       targets: Array.from({ length: 201 }, (_, i) => ({

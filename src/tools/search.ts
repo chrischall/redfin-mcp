@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { textResult, unwrapValue as v } from '../mcp.js';
+import { minifiedResult, unwrapValue as v } from '../mcp.js';
 import { resolveBoth, type RedfinAddress } from '../autocomplete.js';
 import { buildPortalUrlHyperlink, priceDrop } from '../derived.js';
 import { extractZipFromLocation, homesMatchZipState } from '../geo.js';
@@ -447,7 +447,7 @@ export function registerSearchTools(
           // region. Surfaced explicitly so callers know to keep using
           // per-address resolution rather than retrying with a broader
           // search. (#47)
-          return textResult({
+          return minifiedResult({
             ...addressOnlyResult(address),
             coverage: 'profile_only' as const,
           });
@@ -525,7 +525,7 @@ export function registerSearchTools(
           : resultCapHit
             ? `Redfin's gis API returned the hard cap (~${REDFIN_GIS_HARD_CAP}) of results — more listings likely exist for this region. Narrow with price/beds filters, or query a smaller sub-region, to enumerate the long tail.`
             : undefined;
-      return textResult({
+      return minifiedResult({
         resolved_as: 'region' as const,
         region: {
           name: region.name,

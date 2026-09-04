@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { minifiedResult } from '../mcp.js';
 import { resolveRegion } from '../autocomplete.js';
 
 /**
@@ -170,7 +170,7 @@ export function registerMarketTools(
       const table = env.payload?.tableData ?? {};
       const homesForSale = (table.homesForSale ?? []).map(formatMetric);
       const homesSold = (table.homesSold ?? []).map(formatMetric);
-      return textResult({
+      return minifiedResult({
         region: regionInfo,
         property_type: pt,
         for_sale_period: table.homesForSaleCurMonth,

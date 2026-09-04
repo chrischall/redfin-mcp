@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { textResult, unwrapValue as unwrap } from '../mcp.js';
+import { minifiedResult, unwrapValue as unwrap } from '../mcp.js';
 
 /**
  * Redfin's web app calls `/stingray/api/home/comparable-rentals` from
@@ -124,7 +124,7 @@ export function registerRentalsTools(
         `/stingray/api/home/comparable-rentals?${params.toString()}`
       );
       const comps = env.payload?.comparableRentals ?? [];
-      return textResult({
+      return minifiedResult({
         property_id,
         count: comps.length,
         rentals: comps.map(formatRentalComp),

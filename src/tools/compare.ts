@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { viewArg, viewResponse } from '../view.js';
 import {
   fetchAndFormatProperty,
   type FormattedProperty,
@@ -82,6 +82,7 @@ export function registerCompareTools(
         openWorldHint: true,
       },
       inputSchema: {
+        view: viewArg(),
         targets: z
           .array(
             z
@@ -112,7 +113,7 @@ export function registerCompareTools(
           ),
       },
     },
-    async ({ targets, include_description, include_summary }) => {
+    async ({ targets, include_description, include_summary, view }) => {
       const results = await Promise.all(
         (targets as CompareTarget[]).map(
           async (t): Promise<ComparePerProperty> => {
@@ -140,7 +141,7 @@ export function registerCompareTools(
           }
         )
       );
-      return textResult({
+      return viewResponse(view, {
         count: results.length,
         ...(include_summary === true ? { summary: buildSummary(results) } : {}),
         results,
