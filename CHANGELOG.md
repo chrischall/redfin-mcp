@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/chrischall/redfin-mcp/compare/v0.13.0...v0.13.1) (2026-09-04)
+
+
+### Documentation
+
+* **skill:** document the `view` response-shape parameter ([#208](https://github.com/chrischall/redfin-mcp/issues/208)) ([8f02bbc](https://github.com/chrischall/redfin-mcp/commit/8f02bbc5901e27739b2e379f342ac21ca3423673))
+
 ## [0.13.0](https://github.com/chrischall/redfin-mcp/compare/v0.12.0...v0.13.0) (2026-09-04)
 
 
