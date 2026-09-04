@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/chrischall/redfin-mcp/compare/v0.12.0...v0.13.0) (2026-09-04)
+
+
+### Features
+
+* **tools:** compact by default — strip media URLs, and minify every response ([#203](https://github.com/chrischall/redfin-mcp/issues/203)) ([c1ef4b9](https://github.com/chrischall/redfin-mcp/commit/c1ef4b9391ee05511fde5ddfd210700e7efe4ded))
+
+
+### Bug Fixes
+
+* **deps:** pick up @chrischall/mcp-utils 0.23.2 ([#207](https://github.com/chrischall/redfin-mcp/issues/207)) ([edc83b8](https://github.com/chrischall/redfin-mcp/commit/edc83b819de3e060979ce20d59c5f892405fb988))
+
 ## [0.12.0](https://github.com/chrischall/redfin-mcp/compare/v0.11.0...v0.12.0) (2026-09-02)
 
 
