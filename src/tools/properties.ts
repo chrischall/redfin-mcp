@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { minifiedResult, unwrapValue as unwrap } from '../mcp.js';
+import { unwrapValue as unwrap } from '../mcp.js';
+import { viewArg, viewResponse } from '../view.js';
 import { urlToPath } from '../url.js';
 import {
   extractFeatures,
@@ -539,7 +540,7 @@ export function registerPropertyTools(
     {
       title: 'Get Redfin property details',
       description:
-        "Fetch a property's full Redfin record. Provide one of: (a) `url` — full Redfin homedetails URL or path, resolved via the initialInfo endpoint; (b) `property_id` alone — resolved internally by following Redfin's /home/<id> redirect to the canonical listing, then initialInfo; or (c) `property_id` + `listing_id` — fastest, skips resolution and goes straight to aboveTheFold. Returns address, beds/baths, sqft, lot_size (sq ft), year built, price, status, days on market, the primary photo URL, plus derived fields (lot_size_acres, price_drop_*, hoa_monthly_usd, last_sold_*, tax_annual, extracted_features). lot_size / lot_size_acres are null (never 0) for condos and listings with no public-records lot. The raw marketing description is OMITTED by default — opt in with `include_description: true`. Set `include_price_history: true` to bundle the full price history (and the cross-MCP-normalized `events_normalized` view) inline; set `include_tax_history: true` for `tax_history`. Read-only; safe to call repeatedly.",
+        "Fetch a property's full Redfin record. Provide one of: (a) `url` — full Redfin homedetails URL or path, resolved via the initialInfo endpoint; (b) `property_id` alone — resolved internally by following Redfin's /home/<id> redirect to the canonical listing, then initialInfo; or (c) `property_id` + `listing_id` — fastest, skips resolution and goes straight to aboveTheFold. Returns address, beds/baths, sqft, lot_size (sq ft), year built, price, status, days on market, plus derived fields (lot_size_acres, price_drop_*, hoa_monthly_usd, last_sold_*, tax_annual, extracted_features). lot_size / lot_size_acres are null (never 0) for condos and listings with no public-records lot. `primary_photo_url` is a raw Redfin CDN URL and is dropped on the default `compact` view — pass `view: \"full\"` for it, or use `redfin_get_property_photos` for the whole gallery. The raw marketing description is OMITTED by default — opt in with `include_description: true`. Set `include_price_history: true` to bundle the full price history (and the cross-MCP-normalized `events_normalized` view) inline; set `include_tax_history: true` for `tax_history`. Read-only; safe to call repeatedly.",
       annotations: {
         title: 'Get Redfin property details',
         readOnlyHint: true,
@@ -547,6 +548,7 @@ export function registerPropertyTools(
         openWorldHint: true,
       },
       inputSchema: {
+        view: viewArg(),
         url: z
           .string()
           .optional()
@@ -589,7 +591,7 @@ export function registerPropertyTools(
           ),
       },
     },
-    async ({ url, property_id, listing_id, include_description, include_price_history, include_tax_history }) => {
+    async ({ url, property_id, listing_id, include_description, include_price_history, include_tax_history, view }) => {
       // Shared resolveIds → parallel ATF/BTF fetch → format pipeline.
       // BTF gives us the cheap derived fields (#50 last_sold_*, #36
       // tax_annual cleanup) without a second tool call. resolveIds also
@@ -615,7 +617,7 @@ export function registerPropertyTools(
         tax_history = btf.publicRecordsInfo.allTaxInfo.map(formatTaxEvent);
       }
 
-      return minifiedResult({
+      return viewResponse(view, {
         ...property,
         ...(price_history ? { price_history } : {}),
         ...(events_normalized ? { events_normalized } : {}),

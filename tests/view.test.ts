@@ -50,6 +50,43 @@ describe('the constructed photo fields survive compact', () => {
   });
 });
 
+describe('the raw upstream photo URL does NOT survive compact', () => {
+  /**
+   * The mirror image of the block above, and the reason `view.ts` carries a
+   * `drop` list beside its `keep` list. `format()` reads `primary_photo_url`
+   * verbatim off `mediaBrowserInfo.photos[0].photoUrls` — this repo derives
+   * nothing about it — so it is decoration a model cannot use, not a
+   * constructed handle.
+   *
+   * It is named explicitly rather than left to the built-in value rule, which
+   * fires on the trailing `.jpg`: an extension-less or signed CDN URL would
+   * otherwise quietly start surviving compact.
+   */
+  it('drops primary_photo_url whatever the URL looks like', () => {
+    expect(
+      parse(
+        viewResponse('compact', {
+          price: 500000,
+          primary_photo_url: 'https://ssl.cdn-redfin.com/photo/641/bigphoto/849/x_0.jpg',
+        })
+      )
+    ).toEqual({ price: 500000 });
+    expect(
+      parse(
+        viewResponse('compact', {
+          price: 500000,
+          primary_photo_url: 'https://ssl.cdn-redfin.com/photo/641/sig?k=abc',
+        })
+      )
+    ).toEqual({ price: 500000 });
+  });
+
+  it('full keeps it', () => {
+    const record = { price: 500000, primary_photo_url: 'https://cdn/x.jpg' };
+    expect(parse(viewResponse('full', record))).toEqual(record);
+  });
+});
+
 describe('whitespace', () => {
   it('emits none of its own, and never touches whitespace inside a value', () => {
     const remarks = 'Charming.\n\n  Needs work.   ';

@@ -913,4 +913,102 @@ describe('redfin_get_property tool', () => {
       '169 Overlook Point Ln, X, NC 28746',
     ]);
   });
+  /**
+   * `redfin_get_property` did not take a `view` at all until this change,
+   * while `format()` unconditionally emits `primary_photo_url` — a raw Redfin
+   * CDN URL lifted verbatim off `mediaBrowserInfo.photos[0].photoUrls`. That is
+   * the exact field shape the compact rung exists to remove, and it was the one
+   * pass-through field on the fattest read tool in the server.
+   *
+   * Note which way this cuts versus saved.ts: `image_url` there is CONSTRUCTED
+   * by this repo from mlsId + dataSourceId, so it is KEPT. This one is not
+   * derived from anything — nothing here knows what it is — so it goes.
+   */
+  describe('view', () => {
+    const withPhoto = {
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: {
+          streetAddress: '1 Main',
+          city: 'X',
+          state: 'NC',
+          zip: '28746',
+          beds: 3,
+        },
+        mediaBrowserInfo: {
+          photos: [
+            {
+              photoUrls: {
+                fullScreenPhotoUrl:
+                  'https://ssl.cdn-redfin.com/photo/641/bigphoto/849/x_0.jpg',
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    it('drops primary_photo_url on the DEFAULT (compact) rung, keeping the rest', async () => {
+      mockFetchStingrayJson.mockResolvedValueOnce(withPhoto);
+      const result = await harness.callTool('redfin_get_property', {
+        property_id: 1,
+        listing_id: 2,
+      });
+      const parsed = parseToolResult<{
+        primary_photo_url?: string;
+        beds?: number;
+        url?: string;
+      }>(result);
+      expect(parsed.primary_photo_url).toBeUndefined();
+      // Subtractive only: the strip must not take the record with it. `url` is
+      // a redfin.com page, not a picture, and it is how a caller gets back to
+      // the listing.
+      expect(parsed.beds).toBe(3);
+      expect(parsed.url).toContain('/home/1');
+    });
+
+    it('full returns primary_photo_url untouched', async () => {
+      mockFetchStingrayJson.mockResolvedValueOnce(withPhoto);
+      const result = await harness.callTool('redfin_get_property', {
+        property_id: 1,
+        listing_id: 2,
+        view: 'full',
+      });
+      const parsed = parseToolResult<{ primary_photo_url?: string }>(result);
+      expect(parsed.primary_photo_url).toBe(
+        'https://ssl.cdn-redfin.com/photo/641/bigphoto/849/x_0.jpg'
+      );
+    });
+
+    it('drops it even when the CDN URL carries no image extension', async () => {
+      // The reason `primary_photo_url` is named in view.ts's `drop` list rather
+      // than left to the built-in value rule: that rule fires on the trailing
+      // `.jpg`. A signed or extension-less URL would otherwise start surviving
+      // compact with no change here to explain it.
+      mockFetchStingrayJson.mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          addressSectionInfo: { streetAddress: '1 Main', beds: 3 },
+          mediaBrowserInfo: {
+            photos: [
+              {
+                photoUrls: {
+                  fullScreenPhotoUrl: 'https://ssl.cdn-redfin.com/photo/641/sig?k=abc',
+                },
+              },
+            ],
+          },
+        },
+      });
+      const result = await harness.callTool('redfin_get_property', {
+        property_id: 1,
+        listing_id: 2,
+      });
+      const parsed = parseToolResult<{ primary_photo_url?: string; beds?: number }>(
+        result
+      );
+      expect(parsed.primary_photo_url).toBeUndefined();
+      expect(parsed.beds).toBe(3);
+    });
+  });
 });

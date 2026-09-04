@@ -51,7 +51,28 @@ export const viewArg = (): ReturnType<typeof viewParam> => viewParam(RF_VIEWS, {
  */
 const KEEP = ['image_url', 'thumbnail_url'] as const;
 
+/**
+ * `primary_photo_url` is DROPPED — the opposite call from `image_url`, and for
+ * the opposite reason.
+ *
+ * `format()` (`tools/properties.ts`) reads it straight off Redfin's payload:
+ * `atf.mediaBrowserInfo.photos[0].photoUrls.fullScreenPhotoUrl`. Nothing here
+ * derives it, nothing here knows anything about it — it is an upstream CDN URL
+ * this server carries through verbatim, which is precisely the field shape
+ * `stripMediaUrls` exists to remove. A model cannot see it, cannot fetch it,
+ * and `redfin_get_property_photos` returns the whole gallery for a caller who
+ * wants pictures.
+ *
+ * Naming it explicitly rather than leaving it to the built-in rules is what
+ * makes the removal DETERMINISTIC. The key does not match `MEDIA_KEY` (that
+ * anchor is at the start of the key, and this one starts `primary_`), so today
+ * it is removed only by the VALUE rule — because Redfin's CDN URLs happen to
+ * end in `.jpg`. A signed or extension-less URL would silently start surviving
+ * compact, and the field would come back with no change here to explain it.
+ */
+const DROP = ['primary_photo_url'] as const;
+
 export function viewResponse(view: string | undefined, data: unknown): ReturnType<typeof minifiedResult> {
   const rung: View = resolveView(view, RF_VIEWS);
-  return minifiedResult(rung === 'compact' ? stripMediaUrls(data, { keep: KEEP }) : data);
+  return minifiedResult(rung === 'compact' ? stripMediaUrls(data, { keep: KEEP, drop: DROP }) : data);
 }

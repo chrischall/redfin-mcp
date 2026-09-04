@@ -64,7 +64,9 @@ src/
   features.ts           # extractFeatures — structured listing-feature flags
   resolve.ts            # shared address-resolution rung ladder + per-locality
                         #   pool cache (get_by_address + resolve_addresses)
-  mcp.ts                # textResult() result-wrapper + unwrapValue() helper
+  mcp.ts                # minifiedResult() result-wrapper + unwrapValue() helper
+  view.ts               # the `view` rung vocabulary (compact | full) — viewArg()
+                        #   for the schema, viewResponse() for the return
   tools/                # one registerXxxTools(server, client) per file (16):
     search.ts           # redfin_search_properties (buildGisPath + formatHome)
     properties.ts       # redfin_get_property (initialInfo + ATF/BTF)
@@ -124,7 +126,9 @@ REDFIN_COMMUNITIES_FILE=/path/to/communities.json  # override community vocabula
 ## Conventions
 
 - All tools prefixed `redfin_*`.
-- Tool return shape: `textResult(data)` from `src/mcp.ts` → `{ content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] }`. Don't hand-roll the wrapper.
+- Tool return shape: `minifiedResult(data)` from `src/mcp.ts` (a re-export of `@chrischall/mcp-utils`) → `{ content: [{ type: 'text', text: JSON.stringify(data) }] }`. Minified, not pretty-printed: the indentation was ~20% of a large response and nothing downstream reads it. Whitespace INSIDE a value is untouched — a marketing description keeps its paragraph breaks. Don't hand-roll the wrapper.
+- Read tools return through `viewResponse(view, data)` from `src/view.ts` instead, and take `view: viewArg()` in their `inputSchema`. Rungs are `compact` (the default) and `full`; there is no `raw` because these records are ASSEMBLED from several endpoints rather than passed through from one. `compact` is subtractive only — it strips image/avatar URLs and nothing else, because this repo holds no verified record of which Redfin fields matter and an invented field list would hand back records with holes in them. See the docblock in `src/view.ts` for the `keep`/`drop` calls: `image_url` + `thumbnail_url` are KEPT (`formatHomeCard` constructs them from `mlsId` + `dataSourceId`), `primary_photo_url` is DROPPED (`format()` reads it verbatim off Redfin's payload).
+- **Never give `view` to a tool whose product IS the image.** `redfin_get_property_photos` returns `photoUrls` bundles as its entire payload; stripping there doesn't shrink the response, it empties it. It uses `minifiedResult` directly and must keep doing so.
 - Tool annotations: every tool sets `title`, `readOnlyHint: true`, `idempotentHint: true`, and `openWorldHint`. The last is `true` for network-bound tools and `false` for `redfin_calculate_mortgage` (pure local computation).
 - Path-only inputs to `RedfinClient`: pass `/some/path?with=query`, never a full URL. `FetchproxyTransport` prepends `https://www.redfin.com`. When a tool takes a `url` arg from the user, reduce it via `urlToPath` from `src/url.ts`.
 - Always use `client.fetchStingrayJson(...)` for `/stingray/...` endpoints. Stingray responses carry a `{}&&` anti-CSRF prefix that has to be stripped, AND a `{resultCode, errorMessage, payload}` envelope that needs to be checked. The helper handles both.
