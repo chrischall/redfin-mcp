@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { textResult, unwrapValue as unwrap } from '../mcp.js';
+import { minifiedResult, unwrapValue as unwrap } from '../mcp.js';
+import { viewArg, viewResponse } from '../view.js';
 import { redfinPhotoUrl } from './photos.js';
 
 /**
@@ -196,12 +197,13 @@ export function registerSavedTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {},
+      inputSchema: {
+        view: viewArg(),},
     },
-    async () => {
+    async ({ view }) => {
       const html = await client.fetchHtml('/myredfin/favorites');
       const ids = extractFavoritePropertyIds(html);
-      if (ids.length === 0) return textResult([]);
+      if (ids.length === 0) return minifiedResult([]);
       const params = new URLSearchParams({ b: ids.join(','), r: '' });
       const env = await client.fetchStingrayJson<HomecardsPayload>(
         `/stingray/do/api/v3/favorites/homecards?${params.toString()}`
@@ -210,7 +212,7 @@ export function registerSavedTools(
       const formatted = cards
         .map(formatHomeCard)
         .filter((c): c is FormattedSavedHome => c !== null);
-      return textResult(formatted);
+      return viewResponse(view, formatted);
     }
   );
 
@@ -226,12 +228,13 @@ export function registerSavedTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {},
+      inputSchema: {
+        view: viewArg(),},
     },
-    async () => {
+    async ({ view }) => {
       const html = await client.fetchHtml('/myredfin/saved-searches');
       const searches = extractSavedSearches(html);
-      return textResult(searches);
+      return viewResponse(view, searches);
     }
   );
 }

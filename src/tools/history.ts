@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { mapEventType, type NormalizedEventType } from '@chrischall/realty-core';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { minifiedResult } from '../mcp.js';
 import {
   buildCanonicalUrl,
   resolveIds,
@@ -245,7 +245,7 @@ export function registerHistoryTools(
       const taxEvents = (payload?.publicRecordsInfo?.allTaxInfo ?? []).map(
         formatTaxEvent
       );
-      return textResult({
+      return minifiedResult({
         url: canonicalUrl,
         price_events: priceEvents,
         events_normalized: eventsNormalized,

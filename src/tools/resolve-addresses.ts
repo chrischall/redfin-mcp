@@ -6,8 +6,9 @@ import {
   retryOnceOnTimeout,
 } from '@chrischall/mcp-utils/fetchproxy';
 import { runBoundedBatch } from '@chrischall/mcp-utils';
+import { viewArg, viewResponse } from '../view.js';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { minifiedResult } from '../mcp.js';
 import {
   createLocalityPoolCache,
   resolveAddressWithFallbacks,
@@ -222,6 +223,7 @@ export function registerResolveAddressesTools(
         openWorldHint: true,
       },
       inputSchema: {
+        view: viewArg(),
         addresses: z
           .array(AddressInput)
           .min(1)
@@ -231,7 +233,7 @@ export function registerResolveAddressesTools(
           ),
       },
     },
-    async ({ addresses }) => {
+    async ({ addresses, view }) => {
       // One pool cache for the whole batch — memoizes the search-fallback
       // rung's per-locality region lookup + gis pull so a same-city batch
       // collapses to one region lookup + one gis pull total.
@@ -290,7 +292,7 @@ export function registerResolveAddressesTools(
         results: ResolvedAddressRow[];
       } = { count: results.length, resolved: ok, unresolved, results };
       if (pending > 0) envelope.pending = pending;
-      return textResult(envelope);
+      return viewResponse(view, envelope);
     }
   );
 }

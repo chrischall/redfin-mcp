@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { minifiedResult } from '../mcp.js';
 import {
   fetchAndFormatProperty,
   type AboveTheFoldPayload,
@@ -185,7 +185,7 @@ export function registerPhotosTools(
       const photos = rawPhotos
         .map(formatPhoto)
         .filter((p): p is FormattedPhoto => p !== null);
-      return textResult({
+      return minifiedResult({
         property_id: ids.propertyId,
         listing_id: ids.listingId,
         url: canonicalUrl,

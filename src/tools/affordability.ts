@@ -5,7 +5,7 @@ import type {
   AffordabilityInput,
   AffordabilityResult,
 } from '@chrischall/realty-core';
-import { textResult } from '../mcp.js';
+import { minifiedResult } from '../mcp.js';
 
 /**
  * Local affordability calculator. The 28/36 DTI math is canonical in
@@ -56,6 +56,6 @@ export function registerAffordabilityTools(server: McpServer): void {
         back_end_dti: z.number().positive().max(1).optional(),
       },
     },
-    async (input) => textResult(computeAffordability(input as AffordabilityInput))
+    async (input) => minifiedResult(computeAffordability(input as AffordabilityInput))
   );
 }

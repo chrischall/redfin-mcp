@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { minifiedResult } from '../mcp.js';
 import {
   fetchAndFormatProperty,
   type FormattedProperty,
@@ -140,7 +140,7 @@ export function registerCompareTools(
           }
         )
       );
-      return textResult({
+      return minifiedResult({
         count: results.length,
         ...(include_summary === true ? { summary: buildSummary(results) } : {}),
         results,

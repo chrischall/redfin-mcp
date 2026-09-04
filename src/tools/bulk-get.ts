@@ -7,7 +7,7 @@ import {
 } from '@chrischall/mcp-utils/fetchproxy';
 import { runBoundedBatch } from '@chrischall/mcp-utils';
 import type { RedfinClient } from '../client.js';
-import { textResult } from '../mcp.js';
+import { minifiedResult } from '../mcp.js';
 import {
   fetchAndFormatProperty,
   type FormattedProperty,
@@ -245,7 +245,7 @@ export function registerBulkGetTools(
         results: BulkPerProperty[];
       } = { count: results.length, ok, errored, results };
       if (pending > 0) envelope.pending = pending;
-      return textResult(envelope);
+      return minifiedResult(envelope);
     }
   );
 }

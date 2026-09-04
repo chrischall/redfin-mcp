@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RedfinClient } from '../client.js';
-import { textResult, unwrapValue as unwrap } from '../mcp.js';
+import { minifiedResult, unwrapValue as unwrap } from '../mcp.js';
 import { urlToPath } from '../url.js';
 import {
   extractFeatures,
@@ -615,7 +615,7 @@ export function registerPropertyTools(
         tax_history = btf.publicRecordsInfo.allTaxInfo.map(formatTaxEvent);
       }
 
-      return textResult({
+      return minifiedResult({
         ...property,
         ...(price_history ? { price_history } : {}),
         ...(events_normalized ? { events_normalized } : {}),

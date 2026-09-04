@@ -9,9 +9,9 @@
  *
  * Re-exported from `@chrischall/mcp-utils` (the fleet-shared, byte-identical
  * `JSON.stringify(data, null, 2)` text wrapper) so every tool keeps importing
- * `textResult` from `../mcp.js` while the implementation lives upstream.
+ * `minifiedResult` from `../mcp.js` while the implementation lives upstream.
  */
-export { textResult } from '@chrischall/mcp-utils';
+export { minifiedResult } from '@chrischall/mcp-utils';
 
 /**
  * Unwrap a Redfin `{ value: X }` envelope (many stingray fields are

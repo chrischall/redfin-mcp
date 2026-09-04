@@ -5,7 +5,7 @@ import type {
   MortgageInput,
   MortgageBreakdown,
 } from '@chrischall/realty-core';
-import { textResult } from '../mcp.js';
+import { minifiedResult } from '../mcp.js';
 
 /**
  * Local-only mortgage payment calculator. The PITI math is canonical in
@@ -63,6 +63,6 @@ export function registerMortgageTools(server: McpServer): void {
         pmi_rate: z.number().nonnegative().optional().describe('Annual %, applied when LTV > 80%'),
       },
     },
-    async (input) => textResult(computeMortgage(input as MortgageInput))
+    async (input) => minifiedResult(computeMortgage(input as MortgageInput))
   );
 }
