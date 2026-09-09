@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.2](https://github.com/chrischall/redfin-mcp/compare/v0.13.1...v0.13.2) (2026-09-09)
+
+
+### Bug Fixes
+
+* **deps:** bump hono from 4.13.0 to 4.13.7 ([#218](https://github.com/chrischall/redfin-mcp/issues/218)) ([b44d42b](https://github.com/chrischall/redfin-mcp/commit/b44d42bf5f85e4145f3e8507d1646fa0c0698770))
+* **deps:** require @fetchproxy/server ^2.7.0, the first that reads FETCHPROXY_IDENTITY_DIR ([#216](https://github.com/chrischall/redfin-mcp/issues/216)) ([f7ea100](https://github.com/chrischall/redfin-mcp/commit/f7ea100437fcca42f2e4efcba685a96800222a25))
+
 ## [0.13.1](https://github.com/chrischall/redfin-mcp/compare/v0.13.0...v0.13.1) (2026-09-04)
 
 
