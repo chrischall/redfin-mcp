@@ -44,8 +44,8 @@
     "@chrischall/mcp-utils": "^0.26.1",
     "@chrischall/realty-core": "^0.4.1",
     "@fetchproxy/server": "^2.10.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "zod": "^4.4.3"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
