@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.3](https://github.com/chrischall/redfin-mcp/compare/v0.13.2...v0.13.3) (2026-09-10)
+
+
+### Bug Fixes
+
+* **deps:** @fetchproxy/server 2.10.0 and @chrischall/mcp-utils 0.26.1 ([#221](https://github.com/chrischall/redfin-mcp/issues/221)) ([56f4d96](https://github.com/chrischall/redfin-mcp/commit/56f4d967168287c032614e6209fb2cf5cbcd3a24))
+* **deps:** declare the peer floors mcp-utils 0.26.1 requires ([#222](https://github.com/chrischall/redfin-mcp/issues/222)) ([9f7260e](https://github.com/chrischall/redfin-mcp/commit/9f7260ef3cc5a74e2b2935aec71c382cab73c75d))
+* **deps:** take @fetchproxy/server 2.9.1 so a pairing prompt survives ([#219](https://github.com/chrischall/redfin-mcp/issues/219)) ([95f717f](https://github.com/chrischall/redfin-mcp/commit/95f717f2d9f129ffc4c7b510cc09a7216a790041))
+
 ## [0.13.2](https://github.com/chrischall/redfin-mcp/compare/v0.13.1...v0.13.2) (2026-09-09)
 
 
