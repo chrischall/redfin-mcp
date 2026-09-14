@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.4](https://github.com/chrischall/redfin-mcp/compare/v0.13.3...v0.13.4) (2026-09-14)
+
+
+### Bug Fixes
+
+* **deps:** @fetchproxy/server 2.11.3, so the hosted extension pin persists ([#223](https://github.com/chrischall/redfin-mcp/issues/223)) ([98298c9](https://github.com/chrischall/redfin-mcp/commit/98298c985627f83d235119f6f50c1deab0fe5677))
+* **deps:** @fetchproxy/server 3.0.0 — protocol v4 (forward secrecy, AAD over the frame) ([#226](https://github.com/chrischall/redfin-mcp/issues/226)) ([2e99e37](https://github.com/chrischall/redfin-mcp/commit/2e99e3775270f1d20f90b1d9446e8c0bef5bada3))
+
 ## [0.13.3](https://github.com/chrischall/redfin-mcp/compare/v0.13.2...v0.13.3) (2026-09-10)
 
 
