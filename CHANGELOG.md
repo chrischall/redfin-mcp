@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.5](https://github.com/chrischall/redfin-mcp/compare/v0.13.4...v0.13.5) (2026-09-15)
+
+
+### Bug Fixes
+
+* **deps:** @fetchproxy/server 3.0.1 — capped peer frames, logged load drops, atomic identity writes ([#227](https://github.com/chrischall/redfin-mcp/issues/227)) ([7fac115](https://github.com/chrischall/redfin-mcp/commit/7fac11534800105dff2c44728bb1198b55ef58c4))
+
 ## [0.13.4](https://github.com/chrischall/redfin-mcp/compare/v0.13.3...v0.13.4) (2026-09-14)
 
 
