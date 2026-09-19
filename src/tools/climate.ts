@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { mapWithConcurrency } from '@chrischall/mcp-utils/fetchproxy';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult } from '../mcp.js';
@@ -333,13 +333,13 @@ export function registerClimateTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         url: z
           .string()
           .describe(
             'Redfin homedetails URL or path (e.g. /NY/Brooklyn/42-Monroe-St-11238/home/40732555)'
           ),
-      },
+      }),
     },
     async ({ url }) => {
       const one = await fetchOneClimate(client, url);
@@ -363,13 +363,13 @@ export function registerClimateTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         urls: z
           .array(z.string())
           .min(1)
           .max(100)
           .describe('Array of 1–100 Redfin homedetails URLs or paths.'),
-      },
+      }),
     },
     async ({ urls }) => {
       const results = await mapWithConcurrency(urls, 5, (u) =>
@@ -409,13 +409,13 @@ export function registerClimateTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         sample_urls: z
           .array(z.string())
           .min(2)
           .max(10)
           .describe('Array of 2–10 sample Redfin URLs representative of the area.'),
-      },
+      }),
     },
     async ({ sample_urls }) => {
       const results = await mapWithConcurrency(sample_urls, 5, (u) =>

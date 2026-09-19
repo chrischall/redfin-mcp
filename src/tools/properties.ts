@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import type { RedfinClient } from '../client.js';
 import { unwrapValue as unwrap } from '../mcp.js';
 import { viewArg, viewResponse } from '../view.js';
@@ -547,7 +547,7 @@ export function registerPropertyTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         view: viewArg(),
         url: z
           .string()
@@ -589,7 +589,7 @@ export function registerPropertyTools(
           .describe(
             'Bundle the full tax history inline as `tax_history`. Default false. (#49)'
           ),
-      },
+      }),
     },
     async ({ url, property_id, listing_id, include_description, include_price_history, include_tax_history, view }) => {
       // Shared resolveIds → parallel ATF/BTF fetch → format pipeline.

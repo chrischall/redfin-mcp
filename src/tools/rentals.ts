@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult, unwrapValue as unwrap } from '../mcp.js';
 
@@ -88,7 +88,7 @@ export function registerRentalsTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         property_id: z.number().int().positive(),
         latitude: z.number(),
         longitude: z.number(),
@@ -104,7 +104,7 @@ export function registerRentalsTools(
           .int()
           .positive()
           .describe('Upper bound of the rent estimate.'),
-      },
+      }),
     },
     async ({
       property_id,

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import {
   BRIDGE_CONCURRENCY,
   classifyRowError,
@@ -222,7 +222,7 @@ export function registerResolveAddressesTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         view: viewArg(),
         addresses: z
           .array(AddressInput)
@@ -231,7 +231,7 @@ export function registerResolveAddressesTools(
           .describe(
             `Array of 1–${MAX_ADDRESSES} addresses to resolve, each a string or a {street, city, state, zip} object.`
           ),
-      },
+      }),
     },
     async ({ addresses, view }) => {
       // One pool cache for the whole batch — memoizes the search-fallback

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { mapEventType, type NormalizedEventType } from '@chrischall/realty-core';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult } from '../mcp.js';
@@ -225,11 +225,11 @@ export function registerHistoryTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         url: z.string().optional().describe('Redfin homedetails URL or path'),
         property_id: z.number().int().positive().optional(),
         listing_id: z.number().int().positive().optional(),
-      },
+      }),
     },
     async ({ url, property_id, listing_id }) => {
       const { payload, canonicalUrl } = await fetchBelowTheFold(client, {

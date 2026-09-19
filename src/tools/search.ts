@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult, unwrapValue as v } from '../mcp.js';
 import { resolveBoth, type RedfinAddress } from '../autocomplete.js';
@@ -398,7 +398,7 @@ export function registerSearchTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         location: z
           .string()
           .describe(
@@ -431,7 +431,7 @@ export function registerSearchTools(
           .positive()
           .optional()
           .describe('Max listings to return (default 40).'),
-      },
+      }),
     },
     async (input) => {
       // One autocomplete call returns both a Places (region) and an

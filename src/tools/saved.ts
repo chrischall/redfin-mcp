@@ -1,4 +1,5 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import type { McpServer } from '@modelcontextprotocol/server';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult, unwrapValue as unwrap } from '../mcp.js';
 import { viewArg, viewResponse } from '../view.js';
@@ -197,8 +198,8 @@ export function registerSavedTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
-        view: viewArg(),},
+      inputSchema: z.object({
+        view: viewArg(),}),
     },
     async ({ view }) => {
       const html = await client.fetchHtml('/myredfin/favorites');
@@ -228,8 +229,8 @@ export function registerSavedTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
-        view: viewArg(),},
+      inputSchema: z.object({
+        view: viewArg(),}),
     },
     async ({ view }) => {
       const html = await client.fetchHtml('/myredfin/saved-searches');
