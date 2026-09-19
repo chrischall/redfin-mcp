@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/chrischall/redfin-mcp/compare/v1.0.0...v1.1.0) (2026-09-19)
+
+
+### Features
+
+* **deps:** take mcp-utils 1.0.0, so server/discover works ([#235](https://github.com/chrischall/redfin-mcp/issues/235)) ([109a500](https://github.com/chrischall/redfin-mcp/commit/109a500a22f602ad7f32922f55b666f4d3045049))
+
 ## [1.0.0](https://github.com/chrischall/redfin-mcp/compare/v0.13.5...v1.0.0) (2026-09-19)
 
 
