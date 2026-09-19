@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult } from '../mcp.js';
 import { resolveRegion } from '../autocomplete.js';
@@ -112,7 +112,7 @@ export function registerMarketTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         location: z
           .string()
           .optional()
@@ -135,7 +135,7 @@ export function registerMarketTools(
           .positive()
           .optional()
           .describe('Property type filter, default 1 (all)'),
-      },
+      }),
     },
     async ({ location, region_id, region_type, property_type }) => {
       let regionInfo: {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult } from '../mcp.js';
 import { resolveAddressWithFallbacks } from '../resolve.js';
@@ -39,7 +39,7 @@ export function registerGetByAddressTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         address: z
           .string()
           .describe('Street address (e.g. "158 Raven Blvd").'),
@@ -49,7 +49,7 @@ export function registerGetByAddressTools(
           .optional()
           .describe('Two-letter state code (e.g. "NC").'),
         zip: z.string().optional().describe('ZIP code (e.g. "28746").'),
-      },
+      }),
     },
     async (input) => {
       // Delegate the rung-walking (autocomplete + suffix-expansion +

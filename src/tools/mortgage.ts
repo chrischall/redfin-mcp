@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { calculateMortgage } from '@chrischall/realty-core';
 import type {
   MortgageInput,
@@ -50,7 +50,7 @@ export function registerMortgageTools(server: McpServer): void {
         idempotentHint: true,
         openWorldHint: false,
       },
-      inputSchema: {
+      inputSchema: z.object({
         home_price: z.number().positive(),
         down_payment: z.number().nonnegative().optional(),
         down_payment_percent: z.number().nonnegative().max(100).optional(),
@@ -61,7 +61,7 @@ export function registerMortgageTools(server: McpServer): void {
         insurance_annual: z.number().nonnegative().optional(),
         hoa_monthly: z.number().nonnegative().optional(),
         pmi_rate: z.number().nonnegative().optional().describe('Annual %, applied when LTV > 80%'),
-      },
+      }),
     },
     async (input) => minifiedResult(computeMortgage(input as MortgageInput))
   );

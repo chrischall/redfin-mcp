@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import {
   BRIDGE_CONCURRENCY,
   classifyRowError,
@@ -158,7 +158,7 @@ export function registerBulkGetTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         view: viewArg(),
         targets: z
           .array(
@@ -199,7 +199,7 @@ export function registerBulkGetTools(
           .describe(
             "Include each property's raw marketing/public-remarks description. Default false to save context — `extracted_features` always carries the structured signal."
           ),
-      },
+      }),
     },
     async ({ targets, include_description, view }) => {
       const targetList = targets as BulkTarget[];

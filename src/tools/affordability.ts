@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { calculateAffordability } from '@chrischall/realty-core';
 import type {
   AffordabilityInput,
@@ -43,7 +43,7 @@ export function registerAffordabilityTools(server: McpServer): void {
         idempotentHint: true,
         openWorldHint: false,
       },
-      inputSchema: {
+      inputSchema: z.object({
         monthly_income: z.number().positive(),
         monthly_debts: z.number().nonnegative().optional(),
         down_payment: z.number().nonnegative(),
@@ -54,7 +54,7 @@ export function registerAffordabilityTools(server: McpServer): void {
         hoa_monthly: z.number().nonnegative().optional(),
         front_end_dti: z.number().positive().max(1).optional(),
         back_end_dti: z.number().positive().max(1).optional(),
-      },
+      }),
     },
     async (input) => minifiedResult(computeAffordability(input as AffordabilityInput))
   );

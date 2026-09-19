@@ -33,7 +33,7 @@
   ],
   "scripts": {
     "build": "tsc --noEmit && npm run bundle",
-    "bundle": "esbuild src/index.ts --bundle --platform=node --format=esm --banner:js='import { createRequire as __createRequire } from \"module\"; const require = __createRequire(import.meta.url);' --outfile=dist/bundle.js",
+    "bundle": "esbuild src/index.ts --bundle --alias:zod/v4=./node_modules/zod/v4/index.cjs --platform=node --format=esm --banner:js='import { createRequire as __createRequire } from \"module\"; const require = __createRequire(import.meta.url);' --outfile=dist/bundle.js",
     "dev": "node dist/bundle.js",
     "test": "npm run typecheck && vitest run",
     "test:watch": "vitest",
@@ -41,13 +41,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@chrischall/mcp-utils": "^0.26.1",
+    "@chrischall/mcp-utils": "^0.28.0",
     "@chrischall/realty-core": "^0.4.1",
     "@fetchproxy/server": "^3.0.1",
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "zod": "^4.5.4"
+    "@modelcontextprotocol/server": "^2.0.0",
+    "zod": "^4.6.2"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
     "@types/node": "^26.0.0",
     "@vitest/coverage-v8": "^5.0.0",
     "esbuild": "^0.28.1",

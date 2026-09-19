@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult } from '../mcp.js';
 import {
@@ -146,7 +146,7 @@ export function registerPhotosTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         url: z
           .string()
           .optional()
@@ -169,7 +169,7 @@ export function registerPhotosTools(
           .describe(
             'Numeric Redfin listing ID. Required when property_id is provided.'
           ),
-      },
+      }),
     },
     async ({ url, property_id, listing_id }) => {
       // Shared resolveIds → ATF fetch → canonicalUrl pipeline. Photos

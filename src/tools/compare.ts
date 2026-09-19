@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import type { RedfinClient } from '../client.js';
 import { viewArg, viewResponse } from '../view.js';
 import {
@@ -81,7 +81,7 @@ export function registerCompareTools(
         idempotentHint: true,
         openWorldHint: true,
       },
-      inputSchema: {
+      inputSchema: z.object({
         view: viewArg(),
         targets: z
           .array(
@@ -111,7 +111,7 @@ export function registerCompareTools(
           .describe(
             'Include the aligned-by-field `summary` table. Default false — the per-row records carry the same data, so emitting both duplicates ~30% of the response weight. (#37)'
           ),
-      },
+      }),
     },
     async ({ targets, include_description, include_summary, view }) => {
       const results = await Promise.all(
