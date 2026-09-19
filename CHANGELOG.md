@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/chrischall/redfin-mcp/compare/v0.13.5...v1.0.0) (2026-09-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **mcp:** migrate server to SDK v2 ([#230](https://github.com/chrischall/redfin-mcp/issues/230))
+
+### Features
+
+* **mcp:** migrate server to SDK v2 ([#230](https://github.com/chrischall/redfin-mcp/issues/230)) ([c0ac131](https://github.com/chrischall/redfin-mcp/commit/c0ac13117c0f8e1385c5bdd9449566755d0d938a))
+
 ## [0.13.5](https://github.com/chrischall/redfin-mcp/compare/v0.13.4...v0.13.5) (2026-09-15)
 
 
