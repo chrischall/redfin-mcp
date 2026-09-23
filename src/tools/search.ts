@@ -45,11 +45,39 @@ const HOME_TYPE_UIPT: Record<HomeType, number> = {
 
 type StatusKey = 'for_sale' | 'for_rent' | 'sold';
 
-const STATUS_CODES: Record<StatusKey, number> = {
-  for_sale: 9,
-  for_rent: 9, // Different URL path entirely on Redfin (`/apartments-for-rent/...`); v0.1.0 returns sale results.
-  sold: 9, // Same — sold has a separate `/recently-sold` path. v0.1.0 supports for_sale only.
-};
+/**
+ * Only `for_sale` has a gis status code. Rentals and recently-sold live
+ * on entirely different Redfin endpoints (`/apartments-for-rent/...`,
+ * `/recently-sold`) that this tool does not call. `for_rent`/`sold` are
+ * kept in the input enum only so they can be refused with a pointed
+ * error (see {@link assertSupportedStatus}) — they used to map to 9 and
+ * silently return active for-sale listings (fleet-audit #218).
+ */
+const FOR_SALE_STATUS_CODE = 9;
+
+/** Redfin's gis API returns at most ~350 homes per call (#45). */
+export const REDFIN_GIS_HARD_CAP = 350;
+
+const DEFAULT_SEARCH_LIMIT = 40;
+
+/** The `num_homes` actually requested from gis: the caller's limit
+ * (default 40), clamped to the server's hard cap. */
+export function effectiveGisLimit(limit: number | undefined): number {
+  return Math.min(limit ?? DEFAULT_SEARCH_LIMIT, REDFIN_GIS_HARD_CAP);
+}
+
+/** Refuse statuses the gis search can't serve rather than silently
+ * answering with for-sale listings (fleet-audit #218). */
+export function assertSupportedStatus(status: StatusKey | undefined): void {
+  if (status === undefined || status === 'for_sale') return;
+  const hint =
+    status === 'sold'
+      ? 'Redfin serves recently-sold homes from a separate endpoint this tool does not call. For a property\'s own last sale use `redfin_get_property` (last_sold_price / last_sold_date) or `redfin_get_price_history`; for area sold-price trends use `redfin_get_market_report`.'
+      : 'Redfin serves rentals from a separate endpoint this tool does not call. Use `redfin_get_comparable_rentals` for rental comps near a property.';
+  throw new Error(
+    `redfin_search_properties: status "${status}" is not supported — only "for_sale" is. ${hint}`
+  );
+}
 
 export interface RawHome {
   propertyId?: number;
@@ -316,7 +344,7 @@ export function buildGisPath(
   region: { region_id: number; region_type: number },
   input: SearchInput
 ): string {
-  const limit = input.limit ?? 40;
+  const limit = effectiveGisLimit(input.limit);
   const uipt =
     input.home_types && input.home_types.length > 0
       ? input.home_types.map((t) => HOME_TYPE_UIPT[t]).join(',')
@@ -328,7 +356,7 @@ export function buildGisPath(
     region_type: String(region.region_type),
     sf: '1,2,3,5,6,7',
     start: '0',
-    status: String(STATUS_CODES[input.status ?? 'for_sale']),
+    status: String(FOR_SALE_STATUS_CODE),
     uipt,
     v: '8',
   };
@@ -391,7 +419,7 @@ export function registerSearchTools(
     {
       title: 'Search Redfin listings',
       description:
-        "Search Redfin listings by location (city, ZIP, neighborhood, or full street address) and optional filters. Resolves the location via Redfin's autocomplete then queries the gis API; full street addresses short-circuit to the single matched home (no gis call). Returns matching properties with price, beds/baths, sqft, year built, address, and the Redfin home URL. `resolved_as` is `'region'` / `'address'`. `coverage` is `'full'` (gis indexed this region), `'profile_only'` (Redfin has profiles for individual addresses here but search isn't indexed — use redfin_get_by_address per property), or `'none'`. `result_cap_hit: true` signals the gis API returned its ~350 hard cap and more listings exist — narrow with price/beds filters. ZIP queries that fall into Redfin's cross-continent fallback (e.g. ZIP 28746 returning Seattle results) now error loudly. v0.1.0 supports `for_sale` status only. Read-only; safe to call repeatedly.",
+        "Search Redfin listings by location (city, ZIP, neighborhood, or full street address) and optional filters. Resolves the location via Redfin's autocomplete then queries the gis API; full street addresses short-circuit to the single matched home (no gis call). Returns matching properties with price, beds/baths, sqft, year built, address, and the Redfin home URL. `resolved_as` is `'region'` / `'address'`. `coverage` is `'full'` (gis indexed this region), `'profile_only'` (Redfin has profiles for individual addresses here but search isn't indexed — use redfin_get_by_address per property), or `'none'`. `result_cap_hit: true` signals the result page is full — gis returned as many rows as requested (`limit`, default 40, max 350) — so more listings likely exist; raise `limit` or narrow with price/beds filters. ZIP queries that fall into Redfin's cross-continent fallback (e.g. ZIP 28746 returning Seattle results) now error loudly. Only `for_sale` status is supported; `sold` / `for_rent` return an error (use redfin_get_comparable_rentals for rentals, redfin_get_market_report for sold-price trends). Read-only; safe to call repeatedly.",
       annotations: {
         title: 'Search Redfin listings',
         readOnlyHint: true,
@@ -407,7 +435,9 @@ export function registerSearchTools(
         status: z
           .enum(['for_sale', 'for_rent', 'sold'])
           .optional()
-          .describe('Listing status. Only for_sale fully works in v0.1.0.'),
+          .describe(
+            'Listing status. Only for_sale is supported; sold and for_rent return an error rather than for-sale results.'
+          ),
         price_min: z.number().int().nonnegative().optional(),
         price_max: z.number().int().nonnegative().optional(),
         beds_min: z.number().int().nonnegative().optional(),
@@ -430,7 +460,9 @@ export function registerSearchTools(
           .int()
           .positive()
           .optional()
-          .describe('Max listings to return (default 40).'),
+          .describe(
+            'Max listings to return (default 40; values above 350, the gis hard cap, are clamped to 350).'
+          ),
       }),
     },
     async (input) => {
@@ -439,6 +471,7 @@ export function registerSearchTools(
       // (full street addresses) typically return Addresses-only —
       // before this change we'd error out, even though the user gave
       // us a perfectly resolvable address. Fix for #24.
+      assertSupportedStatus(input.status);
       const { region, address } = await resolveBoth(client, input.location);
       if (!region) {
         if (address) {
@@ -476,7 +509,7 @@ export function registerSearchTools(
         },
         input.location
       );
-      const limit = input.limit ?? 40;
+      const limit = effectiveGisLimit(input.limit);
       const formatted = raw
         .map(formatHome)
         .filter((h): h is FormattedHome => h !== null)
@@ -487,7 +520,6 @@ export function registerSearchTools(
       // Redfin's web UI paginates beyond that). We don't paginate
       // server-side today — instead surface a `result_cap_hit` flag
       // and a hint so callers know when to narrow their query.
-      const REDFIN_GIS_HARD_CAP = 350;
       // Cap-hit is a property of the raw gis payload, NOT of the
       // post-format / post-limit `formatted` slice. Two false-negative
       // paths the old `formatted.length === raw.length` check missed:
@@ -496,7 +528,15 @@ export function registerSearchTools(
       // (b) when the caller passes a `limit` below the cap, `.slice`
       // truncates formatted independently. Either way, if raw hit the
       // cap, more listings exist server-side and we should signal it.
-      const resultCapHit = raw.length >= REDFIN_GIS_HARD_CAP;
+      //
+      // gis is asked for `num_homes = limit` (default 40), so it can
+      // never return more than that. A full page — raw.length reaching
+      // the requested limit — therefore means more listings likely
+      // exist, whether that limit is the caller's, the default, or the
+      // 350 server cap (fleet-audit #217: the old `>= 350` check could
+      // only fire when the caller asked for 350+).
+      const serverCapHit = raw.length >= REDFIN_GIS_HARD_CAP;
+      const resultCapHit = serverCapHit || raw.length >= limit;
 
       // #47 coverage. Map (gis returned homes) → 'full'; (gis empty
       // but Redfin clearly has individual profiles) → 'profile_only'
@@ -522,9 +562,11 @@ export function registerSearchTools(
             (coverage === 'profile_only'
               ? "Redfin has per-property profile pages here but does not index this market in search — use `redfin_get_by_address` for individual properties."
               : "This often means the location is outside Redfin's MLS coverage rather than that there are genuinely no listings. Try a nearby larger city, the county, or compare against redfin.com directly.")
-          : resultCapHit
+          : serverCapHit
             ? `Redfin's gis API returned the hard cap (~${REDFIN_GIS_HARD_CAP}) of results — more listings likely exist for this region. Narrow with price/beds filters, or query a smaller sub-region, to enumerate the long tail.`
-            : undefined;
+            : resultCapHit
+              ? `Returned ${raw.length} results — the requested limit of ${limit} — so more listings likely exist for this region. Raise \`limit\` (up to ${REDFIN_GIS_HARD_CAP}), or narrow with price/beds filters, to see the rest.`
+              : undefined;
       return minifiedResult({
         resolved_as: 'region' as const,
         region: {

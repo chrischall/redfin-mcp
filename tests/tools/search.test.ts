@@ -134,6 +134,11 @@ describe('buildGisPath', () => {
     expect(path).toMatch(/num_homes=5/);
   });
 
+  it('clamps limit to the gis hard cap (350) — fleet-audit #217', () => {
+    const path = buildGisPath(region, { location: 'x', limit: 1000 });
+    expect(path).toMatch(/num_homes=350/);
+  });
+
   it('encodes price min/max', () => {
     const path = buildGisPath(region, {
       location: 'x',
@@ -747,4 +752,108 @@ describe('redfin_search_properties tool', () => {
     const parsed = parseToolResult<{ result_cap_hit: boolean }>(r);
     expect(parsed.result_cap_hit).toBe(true);
   });
+
+  const nycPlaces = {
+    resultCode: 0,
+    payload: {
+      sections: [
+        {
+          name: 'Places',
+          rows: [
+            {
+              id: '6_30749',
+              name: 'New York',
+              subName: 'New York, NY, USA',
+              url: '/city/30749/NY/New-York',
+            },
+          ],
+        },
+      ],
+    },
+  };
+  const nycHomes = (n: number) => ({
+    resultCode: 0,
+    payload: {
+      homes: Array.from({ length: n }, (_, i) => ({
+        propertyId: i + 1,
+        city: 'New York',
+        state: 'NY',
+        price: 100,
+      })),
+    },
+  });
+
+  it('result_cap_hit: true when gis fills the DEFAULT limit (40) — more listings exist (fleet-audit #217)', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce(nycPlaces)
+      .mockResolvedValueOnce(nycHomes(40));
+    const r = await harness.callTool('redfin_search_properties', {
+      location: 'New York, NY',
+    });
+    const parsed = parseToolResult<{
+      result_cap_hit: boolean;
+      notice?: string;
+      results: unknown[];
+    }>(r);
+    expect(parsed.results).toHaveLength(40);
+    expect(parsed.result_cap_hit).toBe(true);
+    expect(parsed.notice).toMatch(/limit/);
+    expect(parsed.notice).toMatch(/40/);
+  });
+
+  it('result_cap_hit: true when gis fills a caller limit below the hard cap (fleet-audit #217)', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce(nycPlaces)
+      .mockResolvedValueOnce(nycHomes(10));
+    const r = await harness.callTool('redfin_search_properties', {
+      location: 'New York, NY',
+      limit: 10,
+    });
+    const parsed = parseToolResult<{ result_cap_hit: boolean; notice?: string }>(r);
+    expect(parsed.result_cap_hit).toBe(true);
+    expect(parsed.notice).toMatch(/limit/);
+  });
+
+  it('result_cap_hit: false when gis returns fewer rows than requested', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce(nycPlaces)
+      .mockResolvedValueOnce(nycHomes(39));
+    const r = await harness.callTool('redfin_search_properties', {
+      location: 'New York, NY',
+    });
+    const parsed = parseToolResult<{ result_cap_hit: boolean; notice?: string }>(r);
+    expect(parsed.result_cap_hit).toBe(false);
+    expect(parsed.notice).toBeUndefined();
+  });
+
+  it.each([
+    ['sold', /sold/],
+    ['for_rent', /redfin_get_comparable_rentals/],
+  ])(
+    'rejects status %s instead of silently returning for-sale listings (fleet-audit #218)',
+    async (status, hint) => {
+      const r = await harness.callTool('redfin_search_properties', {
+        location: 'New York, NY',
+        status,
+      });
+      expect(r.isError).toBeTruthy();
+      const text = (r.content[0] as { text: string }).text;
+      expect(text).toMatch(/not supported/i);
+      expect(text).toMatch(hint);
+      // No upstream call — the request is refused before any fetch.
+      expect(mockFetchStingrayJson).not.toHaveBeenCalled();
+    }
+  );
+
+  it('still accepts an explicit status: for_sale', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce(nycPlaces)
+      .mockResolvedValueOnce(nycHomes(1));
+    const r = await harness.callTool('redfin_search_properties', {
+      location: 'New York, NY',
+      status: 'for_sale',
+    });
+    expect(r.isError).toBeFalsy();
+  });
+
 });
