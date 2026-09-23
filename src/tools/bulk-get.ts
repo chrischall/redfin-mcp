@@ -42,7 +42,29 @@ const MAX_TARGETS = 200;
  * of a wedge. Tuned to ~45s, matching zillow's `OVERALL_DEADLINE_MS`
  * (issue #98) and the cohort 45-50s convention.
  */
-const OVERALL_DEADLINE_MS = 45_000;
+export const OVERALL_DEADLINE_MS = 45_000;
+
+/**
+ * Backfill for a row the overall deadline cut off before it settled.
+ * The identity comes from the original target so the row stays
+ * re-runnable; a `pending` row is NEVER a generic miss / not-found.
+ */
+export function pendingPropertyRow(
+  target: BulkTarget,
+  toolLabel: string
+): BulkPerProperty {
+  return {
+    property_id: target.property_id,
+    url: target.url ?? '',
+    status: 'pending',
+    retryable: true,
+    error:
+      `${toolLabel} overall deadline reached before this row settled — ` +
+      'the request is still pending (likely a slow/hung sub-request). ' +
+      'Re-run just the pending targets; a single slow row no longer ' +
+      'wedges the batch.',
+  };
+}
 
 /**
  * Tuning knobs. Defaults are the production values; tests inject a tiny
@@ -58,7 +80,7 @@ export interface BulkGetTuning {
   overallDeadlineMs?: number;
 }
 
-interface BulkTarget {
+export interface BulkTarget {
   url?: string;
   property_id?: number;
   listing_id?: number;
@@ -78,7 +100,7 @@ type BulkRowStatus =
   | 'pending'
   | 'other';
 
-interface BulkPerProperty {
+export interface BulkPerProperty {
   property_id?: number;
   url: string;
   /** Row outcome. Always present so callers never infer it from `error`. */
@@ -103,7 +125,12 @@ interface BulkPerProperty {
  */
 const RETRYABLE_ROW_KINDS = new Set(['timeout', 'bridge_down', 'pending']);
 
-async function fetchOne(
+/**
+ * Fetch one property into a per-row result, never throwing. Shared with
+ * `redfin_compare_properties` (fleet-audit #220) so both tools get the
+ * same retry-once-on-timeout + typed row-error classification.
+ */
+export async function fetchPropertyRow(
   client: RedfinClient,
   t: BulkTarget,
   includeDescription: boolean
@@ -215,23 +242,12 @@ export function registerBulkGetTools(
       // `onError` (→ `onTimeout`) only guards the unreachable throw case.
       const results = await runBoundedBatch<BulkTarget, BulkPerProperty>(
         targetList,
-        (target) => fetchOne(client, target, include_description === true),
+        (target) =>
+          fetchPropertyRow(client, target, include_description === true),
         {
           deadlineMs: overallDeadlineMs,
           concurrency: BRIDGE_CONCURRENCY,
-          // The identity comes from the original target so the row stays
-          // re-runnable; a `pending` row is NEVER a generic miss / not-found.
-          onTimeout: (target): BulkPerProperty => ({
-            property_id: target.property_id,
-            url: target.url ?? '',
-            status: 'pending',
-            retryable: true,
-            error:
-              'bulk_get overall deadline reached before this row settled — ' +
-              'the request is still pending (likely a slow/hung sub-request). ' +
-              'Re-run just the pending targets; a single slow row no longer ' +
-              'wedges the batch.',
-          }),
+          onTimeout: (target) => pendingPropertyRow(target, 'bulk_get'),
         }
       );
 

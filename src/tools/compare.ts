@@ -1,30 +1,42 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
+import { BRIDGE_CONCURRENCY } from '@chrischall/mcp-utils/fetchproxy';
+import { runBoundedBatch } from '@chrischall/mcp-utils';
 import type { RedfinClient } from '../client.js';
 import { viewArg, viewResponse } from '../view.js';
+import type { FormattedProperty } from './properties.js';
 import {
-  fetchAndFormatProperty,
-  type FormattedProperty,
-} from './properties.js';
+  OVERALL_DEADLINE_MS,
+  fetchPropertyRow,
+  pendingPropertyRow,
+  type BulkGetTuning,
+  type BulkPerProperty,
+} from './bulk-get.js';
 
 /**
- * Side-by-side comparison of N Redfin properties. Calls `resolveIds` +
- * `aboveTheFold` once per property concurrently, then surfaces a
- * compact summary table aligned by field. Errors for any single
- * property are captured per-row so a partial comparison still works.
+ * Side-by-side comparison of N Redfin properties. Each property goes
+ * through the same bounded pipeline as `redfin_bulk_get`
+ * (fleet-audit #220): `runBoundedBatch` with {@link BRIDGE_CONCURRENCY}
+ * targets in flight, retry-once-on-timeout per row, and an overall
+ * deadline that turns a hung row into a retryable `pending` row instead
+ * of wedging the call. It used to be an unbounded `Promise.all` — up to
+ * 25 targets × (initialInfo + ATF + BTF) at once through the user's
+ * signed-in tab. Errors for any single property are captured per-row so
+ * a partial comparison still works.
  */
+
+export type CompareTuning = BulkGetTuning;
 
 export interface CompareSummaryRow {
   field: string;
   values: Array<number | string | null>;
 }
 
-interface ComparePerProperty {
-  property_id?: number;
-  url: string;
-  property?: FormattedProperty;
-  error?: string;
-}
+type ComparePerProperty = Pick<
+  BulkPerProperty,
+  'property_id' | 'url' | 'property' | 'error'
+> &
+  Partial<Pick<BulkPerProperty, 'status' | 'retryable'>>;
 
 export function buildSummary(rows: ComparePerProperty[]): CompareSummaryRow[] {
   const pick = (
@@ -67,14 +79,16 @@ interface CompareTarget {
 
 export function registerCompareTools(
   server: McpServer,
-  client: RedfinClient
+  client: RedfinClient,
+  tuning: CompareTuning = {}
 ): void {
+  const overallDeadlineMs = tuning.overallDeadlineMs ?? OVERALL_DEADLINE_MS;
   server.registerTool(
     'redfin_compare_properties',
     {
       title: 'Compare multiple Redfin properties side-by-side',
       description:
-        "Fetch and compare 2 to 25 Redfin properties side-by-side. Provide an array of targets, each either a `url` or a `property_id`+`listing_id` pair. Returns the full per-property record (price, beds/baths, sqft, year built, HOA monthly, last sold, derived price-drop, etc.). For >25 properties or workflows that don't need side-by-side analysis use `redfin_bulk_get`. Pass `include_summary: true` for an aligned-by-field `summary` table (default false to save context — the per-row records carry the same data, so emitting both duplicates ~30% of the response weight). Each record's `extracted_features` (lake_front, hot_tub, basement, furnished, dock, community) is always included. The raw marketing description is omitted by default — opt in with `include_description: true`. Errors for individual properties are captured per-row. Calls are concurrent.",
+        "Fetch and compare 2 to 25 Redfin properties side-by-side. Provide an array of targets, each either a `url` or a `property_id`+`listing_id` pair. Returns the full per-property record (price, beds/baths, sqft, year built, HOA monthly, last sold, derived price-drop, etc.). For >25 properties or workflows that don't need side-by-side analysis use `redfin_bulk_get`. Pass `include_summary: true` for an aligned-by-field `summary` table (default false to save context — the per-row records carry the same data, so emitting both duplicates ~30% of the response weight). Each record's `extracted_features` (lake_front, hot_tub, basement, furnished, dock, community) is always included. The raw marketing description is omitted by default — opt in with `include_description: true`. Errors for individual properties are captured per-row with a `status` (`ok` / `timeout` / `bridge_down` / `protocol` / `pending` / `other`) and `retryable`. Server-side concurrency (~6 in flight) with retry-once-on-timeout per row; the whole call is bounded by an overall deadline, and any row still unsettled then comes back as `status: \"pending\"` (retryable) with a `pending` count.",
       annotations: {
         title: 'Compare multiple Redfin properties side-by-side',
         readOnlyHint: true,
@@ -114,35 +128,22 @@ export function registerCompareTools(
       }),
     },
     async ({ targets, include_description, include_summary, view }) => {
-      const results = await Promise.all(
-        (targets as CompareTarget[]).map(
-          async (t): Promise<ComparePerProperty> => {
-            try {
-              // Shared resolveIds → ATF/BTF → format pipeline (same one
-              // redfin_get_property + redfin_bulk_get use), so the derived
-              // fields (last_sold_*, tax_annual cleanup) are available
-              // without a follow-up fetch.
-              const { ids, canonicalUrl, property } =
-                await fetchAndFormatProperty(client, t, {
-                  includeDescription: include_description === true,
-                });
-              return {
-                property_id: ids.propertyId,
-                url: canonicalUrl,
-                property,
-              };
-            } catch (e) {
-              return {
-                property_id: t.property_id,
-                url: t.url ?? '',
-                error: (e as Error).message,
-              };
-            }
-          }
-        )
+      const results: ComparePerProperty[] = await runBoundedBatch<
+        CompareTarget,
+        BulkPerProperty
+      >(
+        targets as CompareTarget[],
+        (t) => fetchPropertyRow(client, t, include_description === true),
+        {
+          deadlineMs: overallDeadlineMs,
+          concurrency: BRIDGE_CONCURRENCY,
+          onTimeout: (t) => pendingPropertyRow(t, 'compare_properties'),
+        }
       );
+      const pending = results.filter((r) => r.status === 'pending').length;
       return viewResponse(view, {
         count: results.length,
+        ...(pending > 0 ? { pending } : {}),
         ...(include_summary === true ? { summary: buildSummary(results) } : {}),
         results,
       });

@@ -1,4 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import {
+  BRIDGE_CONCURRENCY,
+  FetchproxyTimeoutError,
+} from '@chrischall/mcp-utils/fetchproxy';
 import type { RedfinClient } from '../../src/client.js';
 import { buildSummary, registerCompareTools } from '../../src/tools/compare.js';
 import { createTestHarness, parseToolResult } from '../helpers.js';
@@ -379,4 +383,117 @@ describe('redfin_compare_properties tool', () => {
       ).toBe(true);
     });
   });
+
+  // fleet-audit #220: compare used an unbounded Promise.all (25 targets ×
+  // ATF+BTF through the user's tab) with no retry and no overall deadline.
+  // It now shares bulk_get's bounded pipeline.
+  describe('bounded fan-out (fleet-audit #220)', () => {
+    const atfOk = (pid: number) => ({
+      resultCode: 0,
+      payload: {
+        addressSectionInfo: {
+          streetAddress: `${pid} Main St`,
+          city: 'X',
+          state: 'NC',
+          zip: '28746',
+          latestPriceInfo: { amount: pid * 100_000 },
+        },
+      },
+    });
+
+    it(`keeps at most BRIDGE_CONCURRENCY (${BRIDGE_CONCURRENCY}) targets in flight`, async () => {
+      let inFlight = 0;
+      let maxInFlight = 0;
+      mockFetchStingrayJson.mockImplementation(async (path: string) => {
+        const pid = parseInt(/propertyId=(\d+)/.exec(path)?.[1] ?? '0', 10);
+        if (!path.includes('aboveTheFold')) return { resultCode: 0, payload: {} };
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight--;
+        return atfOk(pid);
+      });
+      const r = await harness.callTool('redfin_compare_properties', {
+        targets: Array.from({ length: 25 }, (_, i) => ({
+          property_id: i + 1,
+          listing_id: 10,
+        })),
+      });
+      const parsed = parseToolResult<{ count: number; results: Array<{ status?: string }> }>(r);
+      expect(parsed.count).toBe(25);
+      expect(parsed.results.every((row) => row.status === 'ok')).toBe(true);
+      expect(maxInFlight).toBeLessThanOrEqual(BRIDGE_CONCURRENCY);
+    });
+
+    it('retries a transient timeout once per row before failing', async () => {
+      let atfCalls = 0;
+      mockFetchStingrayJson.mockImplementation(async (path: string) => {
+        if (!path.includes('aboveTheFold')) return { resultCode: 0, payload: {} };
+        atfCalls++;
+        if (atfCalls === 1) {
+          throw new FetchproxyTimeoutError({
+            url: 'https://www.redfin.com/stingray/api/home/details/aboveTheFold',
+            timeoutMs: 30_000,
+          });
+        }
+        return atfOk(1);
+      });
+      const r = await harness.callTool('redfin_compare_properties', {
+        targets: [
+          { property_id: 1, listing_id: 10 },
+          { property_id: 1, listing_id: 10 },
+        ],
+      });
+      const parsed = parseToolResult<{ results: Array<{ status?: string; property?: { price: number } }> }>(r);
+      expect(parsed.results.map((row) => row.status)).toEqual(['ok', 'ok']);
+      expect(atfCalls).toBe(3);
+    });
+
+    it('returns partial results with a pending row when one target hangs past the deadline', async () => {
+      const deadlineHarness = await createTestHarness((server) =>
+        registerCompareTools(server, mockClient, { overallDeadlineMs: 200 })
+      );
+      mockFetchStingrayJson.mockImplementation(async (path: string) => {
+        const pid = parseInt(/propertyId=(\d+)/.exec(path)?.[1] ?? '0', 10);
+        if (!path.includes('aboveTheFold')) return { resultCode: 0, payload: {} };
+        if (pid === 2) return new Promise(() => {});
+        return atfOk(pid);
+      });
+      const start = Date.now();
+      const r = await deadlineHarness.callTool('redfin_compare_properties', {
+        targets: [
+          { property_id: 1, listing_id: 10 },
+          { property_id: 2, listing_id: 20 },
+          { property_id: 3, listing_id: 30 },
+        ],
+        include_summary: true,
+      });
+      expect(Date.now() - start).toBeLessThan(3000);
+      const parsed = parseToolResult<{
+        count: number;
+        pending?: number;
+        summary: Array<{ field: string; values: unknown[] }>;
+        results: Array<{
+          property_id?: number;
+          status?: string;
+          retryable?: boolean;
+          property?: { price: number };
+        }>;
+      }>(r);
+      expect(parsed.count).toBe(3);
+      expect(parsed.results.map((row) => row.property_id)).toEqual([1, 2, 3]);
+      expect(parsed.results[0].property?.price).toBe(100_000);
+      expect(parsed.results[1].status).toBe('pending');
+      expect(parsed.results[1].retryable).toBe(true);
+      expect(parsed.results[2].property?.price).toBe(300_000);
+      expect(parsed.pending).toBe(1);
+      expect(parsed.summary.find((row) => row.field === 'price')?.values).toEqual([
+        100_000,
+        null,
+        300_000,
+      ]);
+      await deadlineHarness.close();
+    }, 5000);
+  });
+
 });
