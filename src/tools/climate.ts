@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { mapWithConcurrency } from '@chrischall/mcp-utils/fetchproxy';
+import {
+  mapWithConcurrency,
+  retryOnceOnTimeout,
+} from '@chrischall/mcp-utils/fetchproxy';
+import { runBoundedBatch } from '@chrischall/mcp-utils';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult } from '../mcp.js';
 import { urlToPath } from '../url.js';
@@ -281,8 +285,29 @@ const CLIMATE_TOOL_DESCRIPTION =
 
 interface PerPropertyClimateResult {
   url: string;
+  /** Only set on a row the bulk tool's overall deadline cut off. */
+  status?: 'pending';
+  retryable?: boolean;
   result?: ClimateRiskReport;
   error?: string;
+}
+
+/** Concurrent homedetails page fetches for the bulk tool. */
+const CLIMATE_BULK_CONCURRENCY = 5;
+
+/**
+ * Overall hard deadline (ms) for `redfin_get_climate_risk_bulk`. Up to
+ * 100 full-page fetches at concurrency 5 against a 30s per-request bridge
+ * timeout could run ~600s, far past the MCP request deadline (~60s), and
+ * the whole call would fail with -32001 — losing every completed row
+ * (fleet-audit #221). Unsettled rows are returned as retryable `pending`
+ * instead. Same 45s bound as `redfin_bulk_get` / `redfin_resolve_addresses`.
+ */
+const CLIMATE_BULK_DEADLINE_MS = 45_000;
+
+/** Tuning knobs; tests inject a tiny `overallDeadlineMs`. */
+export interface ClimateTuning {
+  overallDeadlineMs?: number;
 }
 
 function normalizeClimateUrl(url: string): string {
@@ -296,12 +321,17 @@ function normalizeClimateUrl(url: string): string {
 
 async function fetchOneClimate(
   client: RedfinClient,
-  url: string
+  url: string,
+  opts: { retryOnTimeout?: boolean } = {}
 ): Promise<PerPropertyClimateResult> {
   const normalizedUrl = normalizeClimateUrl(url);
   try {
     const path = urlToPath(url);
-    const html = await client.fetchHtml(path);
+    // The bulk tool retries a one-shot bridge timeout (the stale-tab tax)
+    // once per row; its overall deadline bounds the extra wait.
+    const html = opts.retryOnTimeout
+      ? await retryOnceOnTimeout(() => client.fetchHtml(path))
+      : await client.fetchHtml(path);
     const flood = extractClimateBlock(html, 'floodData') as FloodData | null;
     const fire = extractClimateBlock(html, 'fireData') as FireData | null;
     const heat = extractClimateBlock(html, 'heatData') as HeatData | null;
@@ -320,8 +350,10 @@ async function fetchOneClimate(
 
 export function registerClimateTools(
   server: McpServer,
-  client: RedfinClient
+  client: RedfinClient,
+  tuning: ClimateTuning = {}
 ): void {
+  const bulkDeadlineMs = tuning.overallDeadlineMs ?? CLIMATE_BULK_DEADLINE_MS;
   server.registerTool(
     'redfin_get_climate_risk',
     {
@@ -356,7 +388,7 @@ export function registerClimateTools(
     {
       title: 'Bulk-fetch Redfin climate risk for many properties',
       description:
-        "Fetch climate risk for up to 100 property URLs in a single call. Same per-property shape as `redfin_get_climate_risk`; output preserves input order. Per-row error capture — properties without First Street data return `{ available: false, reason }` without aborting the batch. Server-side concurrency (~5 fetches in flight). Use this when batching ~60-property workflows where climate risk is the dominant cost. Limitations from the per-property tool apply (no landslide coverage).",
+        "Fetch climate risk for up to 100 property URLs in a single call. Same per-property shape as `redfin_get_climate_risk`; output preserves input order. Per-row error capture — properties without First Street data return `{ available: false, reason }` without aborting the batch. Server-side concurrency (~5 fetches in flight) with retry-once-on-timeout per URL. The whole call is bounded by an overall deadline: any URL still unsettled then comes back as `status: \"pending\"` (retryable) with a `pending` count, so re-run just those. Use this when batching ~60-property workflows where climate risk is the dominant cost. Limitations from the per-property tool apply (no landslide coverage).",
       annotations: {
         title: 'Bulk-fetch Redfin climate risk for many properties',
         readOnlyHint: true,
@@ -372,9 +404,24 @@ export function registerClimateTools(
       }),
     },
     async ({ urls }) => {
-      const results = await mapWithConcurrency(urls, 5, (u) =>
-        fetchOneClimate(client, u)
+      const results = await runBoundedBatch<string, PerPropertyClimateResult>(
+        urls,
+        (u) => fetchOneClimate(client, u, { retryOnTimeout: true }),
+        {
+          deadlineMs: bulkDeadlineMs,
+          concurrency: CLIMATE_BULK_CONCURRENCY,
+          onTimeout: (u) => ({
+            url: normalizeClimateUrl(u),
+            status: 'pending',
+            retryable: true,
+            error:
+              'climate_risk_bulk overall deadline reached before this URL settled — ' +
+              'the request is still pending (likely a slow/hung page fetch). ' +
+              'Re-run just the pending URLs.',
+          }),
+        }
       );
+      const pending = results.filter((r) => r.status === 'pending').length;
       // #53 cluster grouping: surface a `cluster_summary` so callers
       // can see "these 12 properties are all in cluster X". Only emitted
       // when at least 2 properties share a cluster_id.
@@ -391,6 +438,7 @@ export function registerClimateTools(
         ok: results.filter((r) => !r.error && r.result?.available).length,
         unavailable: results.filter((r) => r.result && !r.result.available).length,
         errored: results.filter((r) => r.error).length,
+        ...(pending > 0 ? { pending } : {}),
         ...(cluster_summary.length > 0 ? { cluster_summary } : {}),
         results,
       });
