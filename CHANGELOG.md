@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/chrischall/redfin-mcp/compare/v1.1.0...v1.1.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **deps:** require zod ^4.6.5 to match @chrischall/mcp-utils 2.4.0 ([#239](https://github.com/chrischall/redfin-mcp/issues/239)) ([76c1774](https://github.com/chrischall/redfin-mcp/commit/76c1774282d43724bdf97aec737d76526c2a21d4))
+* **deps:** upgrade @chrischall/mcp-utils to 2.4.0 and @fetchproxy/* to 3.2.0 ([#237](https://github.com/chrischall/redfin-mcp/issues/237)) ([f222a8e](https://github.com/chrischall/redfin-mcp/commit/f222a8ee17ed4067c835ca10cddc03a5bc5bd9d9))
+
 ## [1.1.0](https://github.com/chrischall/redfin-mcp/compare/v1.0.0...v1.1.0) (2026-09-19)
 
 
