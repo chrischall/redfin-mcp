@@ -129,5 +129,5 @@ The other fifteen tools take no `view`, and not for one blanket reason:
 - **Sign-in required for saved-* tools.** If the user isn't signed into redfin.com in the bridged Chrome tab, those tools fail with `SessionNotAuthenticatedError`. Public tools work either way.
 - **AWS WAF challenge.** Redfin occasionally serves a WAF challenge to fresh sessions. Solving it in the Chrome tab once unblocks subsequent fetches.
 - **No write surface yet.** All tools are read-only. Saving a home / search / contact form are not implemented in v0.1.
-- **`for_rent` / `sold` listing statuses** map to entirely different Redfin URL paths (`/apartments-for-rent/...`, `/recently-sold`). v0.1 of `redfin_search_properties` supports `for_sale` only.
+- **`for_rent` / `sold` listing statuses** map to entirely different Redfin URL paths (`/apartments-for-rent/...`, `/recently-sold`). `redfin_search_properties` supports `for_sale` only — `sold` / `for_rent` return an error rather than for-sale results.
 - **No equivalent to Zillow's Zestimate history tool.** Redfin's Redfin Estimate is exposed as a current scalar inside `redfin_get_property`; there's no historical-series endpoint yet.

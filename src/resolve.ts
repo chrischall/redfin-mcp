@@ -277,7 +277,17 @@ async function loadLocalityPool(
     if (homes.length === 0) return null;
     return { region, homes, serviceRegionName: env.payload?.serviceRegionName };
   })();
-  cache?.set(regionQuery, promise);
+  if (cache) {
+    cache.set(regionQuery, promise);
+    // Only successful loads and genuine misses (null) stay memoized. A
+    // rejection (e.g. a FetchproxyTimeoutError on the gis pull) is
+    // evicted so the retry and every later same-locality row re-fetch
+    // instead of inheriting the cached failure (fleet-audit #219). The
+    // identity check keeps a newer in-flight load from being evicted.
+    promise.catch(() => {
+      if (cache.get(regionQuery) === promise) cache.delete(regionQuery);
+    });
+  }
   return promise;
 }
 

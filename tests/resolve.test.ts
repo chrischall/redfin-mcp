@@ -900,4 +900,38 @@ describe('resolveAddressWithFallbacks — per-locality pool cache', () => {
     // Second row's extra calls are only its two address-variant attempts.
     expect(mockFetchStingrayJson.mock.calls.length).toBe(callsAfterFirst + 2);
   });
+
+  it('does NOT memoize a rejected pool load — a transient gis failure is retried by the next row', async () => {
+    // Regression (fleet-audit #219): the in-flight promise was cached
+    // and never evicted on rejection, so one FetchproxyTimeoutError on
+    // the gis pull poisoned every later same-locality row (and the
+    // retryOnceOnTimeout re-run) with the same cached rejection.
+    wireSharedLocality();
+    const base = mockFetchStingrayJson.getMockImplementation()!;
+    let gisCalls = 0;
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/api/gis')) {
+        gisCalls += 1;
+        if (gisCalls === 1) throw new Error('bridge timeout');
+      }
+      return base(path);
+    });
+    const pool = createLocalityPoolCache();
+
+    await expect(
+      resolveAddressWithFallbacks(
+        mockClient,
+        { street: '100 Oakwood Dr', city: 'Lake Lure', state: 'NC', zip: '28746' },
+        { pool }
+      )
+    ).rejects.toThrow(/bridge timeout/);
+
+    const second = await resolveAddressWithFallbacks(
+      mockClient,
+      { street: '231 Bluebird Rd', city: 'Lake Lure', state: 'NC', zip: '28746' },
+      { pool }
+    );
+    expect(second.match?.home_id).toBe('2');
+    expect(countCalls(/\/stingray\/api\/gis/)).toBe(2);
+  });
 });

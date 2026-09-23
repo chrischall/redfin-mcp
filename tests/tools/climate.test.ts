@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { FetchproxyTimeoutError } from '@chrischall/mcp-utils/fetchproxy';
 import type { RedfinClient } from '../../src/client.js';
 import {
   extractClimateBlock,
@@ -284,6 +285,71 @@ describe('redfin_get_climate_risk_bulk tool (#52)', () => {
       urls: Array.from({ length: 101 }, (_, i) => `/x/home/${i}`),
     });
     expect(r.isError).toBeTruthy();
+  });
+
+  // fleet-audit #221: 100 HTML fetches at concurrency 5 with a 30s
+  // per-request bridge timeout could run ~600s — far past the MCP request
+  // timeout — and lose every completed row. The batch is now bounded by an
+  // overall deadline with retryable pending rows, like bulk_get.
+  it('returns partial results with a pending row when one URL hangs past the deadline (fleet-audit #221)', async () => {
+    const deadlineHarness = await createTestHarness((server) =>
+      registerClimateTools(server, mockClient, { overallDeadlineMs: 200 })
+    );
+    mockFetchHtml.mockImplementation(async (path: string) => {
+      if (path.includes('home/2')) return new Promise(() => {});
+      return '"fireData":{"fsid":1,"fireFactor":5}';
+    });
+    const start = Date.now();
+    const r = await deadlineHarness.callTool('redfin_get_climate_risk_bulk', {
+      urls: ['/x/home/1', '/x/home/2', '/x/home/3'],
+    });
+    expect(Date.now() - start).toBeLessThan(3000);
+    expect(r.isError).toBeFalsy();
+    const parsed = parseToolResult<{
+      count: number;
+      ok: number;
+      pending?: number;
+      results: Array<{
+        url: string;
+        status?: string;
+        retryable?: boolean;
+        result?: { available: boolean };
+        error?: string;
+      }>;
+    }>(r);
+    expect(parsed.count).toBe(3);
+    expect(parsed.ok).toBe(2);
+    expect(parsed.pending).toBe(1);
+    expect(parsed.results[1]).toMatchObject({
+      url: 'https://www.redfin.com/x/home/2',
+      status: 'pending',
+      retryable: true,
+    });
+    expect(parsed.results[1].result).toBeUndefined();
+    expect(parsed.results[0].result?.available).toBe(true);
+    expect(parsed.results[2].result?.available).toBe(true);
+    await deadlineHarness.close();
+  }, 5000);
+
+  it('retries a transient bridge timeout once per URL (fleet-audit #221)', async () => {
+    let calls = 0;
+    mockFetchHtml.mockImplementation(async () => {
+      calls++;
+      if (calls === 1) {
+        throw new FetchproxyTimeoutError({
+          url: 'https://www.redfin.com/x/home/1',
+          timeoutMs: 30_000,
+        });
+      }
+      return '"fireData":{"fsid":1,"fireFactor":5}';
+    });
+    const r = await bulkHarness.callTool('redfin_get_climate_risk_bulk', {
+      urls: ['/x/home/1'],
+    });
+    const parsed = parseToolResult<{ ok: number; pending?: number }>(r);
+    expect(parsed.ok).toBe(1);
+    expect(parsed.pending).toBeUndefined();
+    expect(calls).toBe(2);
   });
 });
 
