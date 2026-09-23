@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/chrischall/redfin-mcp/compare/v1.1.1...v1.1.2) (2026-09-23)
+
+
+### Bug Fixes
+
+* flag truncated searches, reject sold/for_rent, bound compare and climate bulk fan-out ([#240](https://github.com/chrischall/redfin-mcp/issues/240)) ([3d7e0b2](https://github.com/chrischall/redfin-mcp/commit/3d7e0b26444a02129f2b1042cfe95f1cb1b89432))
+
 ## [1.1.1](https://github.com/chrischall/redfin-mcp/compare/v1.1.0...v1.1.1) (2026-09-23)
 
 
