@@ -6,7 +6,12 @@ import {
   formatClimate,
   registerClimateTools,
 } from '../../src/tools/climate.js';
-import { createTestHarness, parseToolResult } from '../helpers.js';
+import {
+  createFetchGate,
+  createTestHarness,
+  parseToolResult,
+  settle,
+} from '../helpers.js';
 
 const mockFetchHtml = vi.fn();
 const mockClient = { fetchHtml: mockFetchHtml } as unknown as RedfinClient;
@@ -416,4 +421,29 @@ describe('redfin_get_area_climate_baseline tool (#53)', () => {
     );
     expect(rEleven.isError).toBeTruthy();
   });
+});
+
+describe('redfin_get_climate_risk_bulk stops issuing fetches after the deadline (fleet-audit #956)', () => {
+  it('neither dequeues queued URLs nor retries timed-out in-flight rows once the deadline answered pending', async () => {
+    const gate = createFetchGate();
+    const h = await createTestHarness((server) =>
+      registerClimateTools(server, mockClient, { overallDeadlineMs: 100 })
+    );
+    mockFetchHtml.mockImplementation(() => gate.hold());
+    const r = await h.callTool('redfin_get_climate_risk_bulk', {
+      urls: Array.from({ length: 10 }, (_, i) => `/x/home/${i + 1}`),
+    });
+    const parsed = parseToolResult<{ pending?: number }>(r);
+    expect(parsed.pending).toBe(10);
+    const callsAtDeadline = mockFetchHtml.mock.calls.length;
+    expect(callsAtDeadline).toBe(5);
+    // Release several times so both the retry path and the runner's
+    // dequeue-next path get a chance to issue more work.
+    for (let round = 0; round < 3; round += 1) {
+      gate.rejectAll(new FetchproxyTimeoutError('slow'));
+      await settle();
+    }
+    expect(mockFetchHtml.mock.calls.length).toBe(callsAtDeadline);
+    await h.close();
+  }, 5000);
 });

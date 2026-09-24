@@ -8,6 +8,7 @@ import { runBoundedBatch } from '@chrischall/mcp-utils';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult } from '../mcp.js';
 import { urlToPath } from '../url.js';
+import { DeadlineAbandonedError, throwIfAborted } from '../deadline.js';
 
 /**
  * Redfin's homedetails page server-renders climate risk data from
@@ -322,16 +323,22 @@ function normalizeClimateUrl(url: string): string {
 async function fetchOneClimate(
   client: RedfinClient,
   url: string,
-  opts: { retryOnTimeout?: boolean } = {}
+  opts: { retryOnTimeout?: boolean; signal?: AbortSignal } = {}
 ): Promise<PerPropertyClimateResult> {
   const normalizedUrl = normalizeClimateUrl(url);
   try {
     const path = urlToPath(url);
     // The bulk tool retries a one-shot bridge timeout (the stale-tab tax)
-    // once per row; its overall deadline bounds the extra wait.
+    // once per row; its overall deadline bounds the extra wait. The
+    // deadline `signal` (#956) is checked before each attempt so a row
+    // already answered `pending` never fetches (or re-fetches) the page.
+    const fetchPage = () => {
+      throwIfAborted(opts.signal);
+      return client.fetchHtml(path);
+    };
     const html = opts.retryOnTimeout
-      ? await retryOnceOnTimeout(() => client.fetchHtml(path))
-      : await client.fetchHtml(path);
+      ? await retryOnceOnTimeout(fetchPage)
+      : await fetchPage();
     const flood = extractClimateBlock(html, 'floodData') as FloodData | null;
     const fire = extractClimateBlock(html, 'fireData') as FireData | null;
     const heat = extractClimateBlock(html, 'heatData') as HeatData | null;
@@ -341,6 +348,9 @@ async function fetchOneClimate(
       result: formatClimate(flood, fire, heat, { clusterId }),
     };
   } catch (e) {
+    // Abandoned by the batch deadline (#956): rethrow so runBoundedBatch's
+    // default onError backfills the retryable `pending` row.
+    if (e instanceof DeadlineAbandonedError) throw e;
     return {
       url: normalizedUrl,
       error: (e as Error).message,
@@ -406,7 +416,8 @@ export function registerClimateTools(
     async ({ urls }) => {
       const results = await runBoundedBatch<string, PerPropertyClimateResult>(
         urls,
-        (u) => fetchOneClimate(client, u, { retryOnTimeout: true }),
+        (u, signal) =>
+          fetchOneClimate(client, u, { retryOnTimeout: true, signal }),
         {
           deadlineMs: bulkDeadlineMs,
           concurrency: CLIMATE_BULK_CONCURRENCY,
