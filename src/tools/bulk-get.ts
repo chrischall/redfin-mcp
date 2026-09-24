@@ -7,6 +7,7 @@ import {
 } from '@chrischall/mcp-utils/fetchproxy';
 import { runBoundedBatch } from '@chrischall/mcp-utils';
 import type { RedfinClient } from '../client.js';
+import { DeadlineAbandonedError, throwIfAborted } from '../deadline.js';
 import { viewArg, viewResponse } from '../view.js';
 import {
   fetchAndFormatProperty,
@@ -133,7 +134,9 @@ const RETRYABLE_ROW_KINDS = new Set(['timeout', 'bridge_down', 'pending']);
 export async function fetchPropertyRow(
   client: RedfinClient,
   t: BulkTarget,
-  includeDescription: boolean
+  includeDescription: boolean,
+  signal?: AbortSignal,
+  toolLabel = 'bulk_get'
 ): Promise<BulkPerProperty> {
   try {
     // Shared resolveIds → parallel ATF/BTF → format pipeline (same one
@@ -141,9 +144,14 @@ export async function fetchPropertyRow(
     // (#78/D3) so a single FetchproxyTimeoutError — the rotating-tab /
     // SW-eviction tax that hits the first request to a stale tab — gets one
     // retry before the row fails, matching zillow/homes/onehome.
-    const { ids, canonicalUrl, property } = await retryOnceOnTimeout(() =>
-      fetchAndFormatProperty(client, t, { includeDescription })
-    );
+    //
+    // `signal` is the batch deadline (#956): checked inside the retry
+    // closure so a row the deadline already answered `pending` neither
+    // starts nor retries a fetch through the user's tab.
+    const { ids, canonicalUrl, property } = await retryOnceOnTimeout(() => {
+      throwIfAborted(signal);
+      return fetchAndFormatProperty(client, t, { includeDescription, signal });
+    });
     return {
       property_id: ids.propertyId,
       url: canonicalUrl,
@@ -151,6 +159,11 @@ export async function fetchPropertyRow(
       property,
     };
   } catch (e) {
+    // Abandoned by the batch deadline: runBoundedBatch has already
+    // backfilled this slot, so this value is never read — keep it honest.
+    if (e instanceof DeadlineAbandonedError) {
+      return pendingPropertyRow(t, toolLabel);
+    }
     // Swap the old ad-hoc `(e as Error).message` wrap for the cohort's
     // typed classifier (fetchproxy 0.10.0). It hands back both the kind
     // — so the batch summary can keep timeouts distinguishable from a
@@ -242,8 +255,14 @@ export function registerBulkGetTools(
       // `onError` (→ `onTimeout`) only guards the unreachable throw case.
       const results = await runBoundedBatch<BulkTarget, BulkPerProperty>(
         targetList,
-        (target) =>
-          fetchPropertyRow(client, target, include_description === true),
+        (target, signal) =>
+          fetchPropertyRow(
+            client,
+            target,
+            include_description === true,
+            signal,
+            'bulk_get'
+          ),
         {
           deadlineMs: overallDeadlineMs,
           concurrency: BRIDGE_CONCURRENCY,

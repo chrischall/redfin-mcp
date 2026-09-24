@@ -4,6 +4,7 @@ import type { RedfinClient } from '../client.js';
 import { unwrapValue as unwrap } from '../mcp.js';
 import { viewArg, viewResponse } from '../view.js';
 import { urlToPath } from '../url.js';
+import { throwIfAborted } from '../deadline.js';
 import {
   extractFeatures,
   loadCommunities,
@@ -100,7 +101,8 @@ export function extractPropertyIdFromUrl(url: string): string | null {
  */
 export async function resolveIds(
   client: RedfinClient,
-  args: { url?: string; property_id?: number; listing_id?: number }
+  args: { url?: string; property_id?: number; listing_id?: number },
+  signal?: AbortSignal
 ): Promise<ResolvedIds> {
   if (args.property_id && args.listing_id) {
     return {
@@ -120,6 +122,7 @@ export async function resolveIds(
   // redirect to recover the slug, then fall through to the URL path below
   // so initialInfo can hand back propertyId + listingId.
   if (args.property_id && !args.listing_id && !args.url) {
+    throwIfAborted(signal);
     args = { ...args, url: await client.resolveCanonicalUrl(args.property_id) };
   }
   if (!args.url) {
@@ -134,6 +137,7 @@ export async function resolveIds(
     );
   }
   const path = urlToPath(args.url);
+  throwIfAborted(signal);
   const env = await client.fetchStingrayJson<InitialInfoPayload>(
     `/stingray/api/home/details/initialInfo?path=${encodeURIComponent(path)}`
   );
@@ -486,10 +490,16 @@ export async function fetchAndFormatProperty<
 >(
   client: RedfinClient,
   target: PropertyTarget,
-  opts: { includeDescription?: boolean; withBelowTheFold?: boolean } = {}
+  opts: {
+    includeDescription?: boolean;
+    withBelowTheFold?: boolean;
+    /** Batch deadline signal (#956): stop before each request once aborted. */
+    signal?: AbortSignal;
+  } = {}
 ): Promise<FetchAndFormatResult<A>> {
   const withBtf = opts.withBelowTheFold !== false;
-  const ids = await resolveIds(client, target);
+  const ids = await resolveIds(client, target, opts.signal);
+  throwIfAborted(opts.signal);
   const params = new URLSearchParams({
     propertyId: String(ids.propertyId),
     accessLevel: '1',
