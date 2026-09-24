@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { FetchproxyTimeoutError } from '@chrischall/mcp-utils/fetchproxy';
 import type { RedfinClient } from '../../src/client.js';
 import { registerResolveAddressesTools } from '../../src/tools/resolve-addresses.js';
-import { createTestHarness, parseToolResult } from '../helpers.js';
+import {
+  createFetchGate,
+  createTestHarness,
+  parseToolResult,
+  settle,
+} from '../helpers.js';
 
 const mockFetchStingrayJson = vi.fn();
 const mockClient = {
@@ -676,4 +681,29 @@ describe('redfin_resolve_addresses tool', () => {
     expect(gisCalls).toHaveLength(1);
     expect(regionCalls).toHaveLength(1);
   });
+});
+
+describe('redfin_resolve_addresses stops issuing fetches after the deadline (fleet-audit #956)', () => {
+  it('neither dequeues queued addresses nor retries timed-out in-flight rows once the deadline answered pending', async () => {
+    const gate = createFetchGate();
+    const h = await createTestHarness((server) =>
+      registerResolveAddressesTools(server, mockClient, { overallDeadlineMs: 100 })
+    );
+    mockFetchStingrayJson.mockImplementation(() => gate.hold());
+    const r = await h.callTool('redfin_resolve_addresses', {
+      addresses: Array.from({ length: 10 }, (_, i) => `${i + 1} Test Ln`),
+    });
+    const parsed = parseToolResult<{ pending?: number }>(r);
+    expect(parsed.pending).toBe(10);
+    const callsAtDeadline = mockFetchStingrayJson.mock.calls.length;
+    expect(callsAtDeadline).toBe(6);
+    // Release several times so both the retry path and the runner's
+    // dequeue-next path get a chance to issue more work.
+    for (let round = 0; round < 3; round += 1) {
+      gate.rejectAll(new FetchproxyTimeoutError('slow'));
+      await settle();
+    }
+    expect(mockFetchStingrayJson.mock.calls.length).toBe(callsAtDeadline);
+    await h.close();
+  }, 5000);
 });

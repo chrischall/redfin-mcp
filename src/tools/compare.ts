@@ -133,7 +133,14 @@ export function registerCompareTools(
         BulkPerProperty
       >(
         targets as CompareTarget[],
-        (t) => fetchPropertyRow(client, t, include_description === true),
+        (t, signal) =>
+          fetchPropertyRow(
+            client,
+            t,
+            include_description === true,
+            signal,
+            'compare_properties'
+          ),
         {
           deadlineMs: overallDeadlineMs,
           concurrency: BRIDGE_CONCURRENCY,

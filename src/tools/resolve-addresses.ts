@@ -8,6 +8,7 @@ import {
 import { runBoundedBatch } from '@chrischall/mcp-utils';
 import { viewArg, viewResponse } from '../view.js';
 import type { RedfinClient } from '../client.js';
+import { DeadlineAbandonedError, throwIfAborted } from '../deadline.js';
 import { minifiedResult } from '../mcp.js';
 import {
   createLocalityPoolCache,
@@ -140,7 +141,8 @@ function inputToParts(input: AddressInput): {
 async function resolveOne(
   client: RedfinClient,
   input: AddressInput,
-  pool?: LocalityPoolCache
+  pool?: LocalityPoolCache,
+  signal?: AbortSignal
 ): Promise<ResolvedAddressRow> {
   const parts = inputToParts(input);
   try {
@@ -157,9 +159,12 @@ async function resolveOne(
     // bubbling up. Any other error class bubbles immediately — only a
     // transient bridge hiccup gets a second chance.
     const { match, attempts, matchedVariant, matchedVia } =
-      await retryOnceOnTimeout(() =>
-        resolveAddressWithFallbacks(client, parts, { pool })
-      );
+      await retryOnceOnTimeout(() => {
+        // #956: a row the batch deadline already answered `pending` must
+        // not start (or retry) the ladder through the user's tab.
+        throwIfAborted(signal);
+        return resolveAddressWithFallbacks(client, parts, { pool, signal });
+      });
     const query = attempts[0] ?? parts.street;
     if (!match) return { input, query, resolved: false };
     return {
@@ -180,6 +185,9 @@ async function resolveOne(
         : {}),
     };
   } catch (e) {
+    // Abandoned by the batch deadline (#956): rethrow so runBoundedBatch's
+    // default onError backfills the retryable `pending` row.
+    if (e instanceof DeadlineAbandonedError) throw e;
     const fallbackQuery =
       typeof input === 'string'
         ? input
@@ -252,7 +260,7 @@ export function registerResolveAddressesTools(
       // unreachable throw case.
       const results = await runBoundedBatch<AddressInput, ResolvedAddressRow>(
         inputs,
-        (input) => resolveOne(client, input, pool),
+        (input, signal) => resolveOne(client, input, pool, signal),
         {
           deadlineMs: overallDeadlineMs,
           concurrency: BRIDGE_CONCURRENCY,

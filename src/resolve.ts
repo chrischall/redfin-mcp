@@ -24,6 +24,7 @@
  */
 import { addressMatch } from '@chrischall/realty-core';
 import type { RedfinClient } from './client.js';
+import { throwIfAborted } from './deadline.js';
 import {
   parseAddressUrl,
   resolveAddress,
@@ -424,12 +425,17 @@ async function searchFallbackResolve(
 export async function resolveAddressWithFallbacks(
   client: RedfinClient,
   input: AddressParts,
-  opts: { pool?: LocalityPoolCache } = {}
+  opts: {
+    pool?: LocalityPoolCache;
+    /** Batch deadline signal (#956): stop before each rung once aborted. */
+    signal?: AbortSignal;
+  } = {}
 ): Promise<ResolveResult> {
   const candidates = buildVariants(input);
   const attempts: string[] = [];
   for (const variant of candidates) {
     attempts.push(variant);
+    throwIfAborted(opts.signal);
     const match = await resolveAddress(client, variant);
     if (match) {
       return { match, attempts, matchedVariant: variant, matchedVia: 'autocomplete' };
@@ -442,6 +448,7 @@ export async function resolveAddressWithFallbacks(
   const regionQuery = regionQueryFromInput(input);
   if (regionQuery) {
     attempts.push(`search:${regionQuery}`);
+    throwIfAborted(opts.signal);
     const fallbackMatch = await searchFallbackResolve(client, input, opts.pool);
     if (fallbackMatch) {
       return { match: fallbackMatch, attempts, matchedVia: 'search_fallback' };
