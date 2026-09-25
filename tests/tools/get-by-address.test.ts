@@ -356,6 +356,65 @@ describe('redfin_get_by_address tool', () => {
     expect(parsed.matched_via).toBe('search_fallback');
   });
 
+  it('SEARCH FALLBACK: the opposite-directional house is rejected, not returned (realty-core 0.4.8)', async () => {
+    // The gis pool holds only 126 S Main St. realty-core <=0.4.2 ignored
+    // directionals, so "126 N Main St" passed the wrong-house gate with a
+    // perfect score and the tool resolved to the wrong house; 0.4.8 treats
+    // N vs S as a different street, so the rung (and the tool) misses.
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (q === 'Lake Lure NC') {
+          return {
+            resultCode: 0,
+            payload: {
+              sections: [
+                {
+                  name: 'Places',
+                  rows: [
+                    { id: '2_555', name: 'Lake Lure', subName: 'NC, USA', url: '/city/555/NC/Lake-Lure' },
+                  ],
+                },
+              ],
+            },
+          };
+        }
+        return { resultCode: 0, payload: { sections: [{ name: 'Addresses', rows: [] }] } };
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        return {
+          resultCode: 0,
+          payload: {
+            serviceRegionName: 'Lake-Lure',
+            homes: [
+              {
+                propertyId: 99126,
+                url: '/NC/Lake-Lure/126-S-Main-St-28746/home/99126',
+                streetLine: { value: '126 S Main St' },
+                city: 'Lake Lure',
+                state: 'NC',
+                zip: '28746',
+              },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await harness.callTool('redfin_get_by_address', {
+      address: '126 N Main St',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+    const parsed = parseToolResult<{ resolved: boolean; home_id?: string }>(result);
+    expect(parsed.home_id).not.toBe('99126');
+    expect(parsed.resolved).toBe(false);
+  });
+
   it('SEARCH FALLBACK: a unit-bearing address still resolves to the street listing (realty-core 0.4.8)', async () => {
     // gis homes carry the street line only. realty-core 0.4.7 anchored on
     // EVERY number, so the unit id "5" in "Apt 5" had to appear in the
