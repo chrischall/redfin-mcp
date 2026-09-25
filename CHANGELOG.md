@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.3](https://github.com/chrischall/redfin-mcp/compare/v1.1.2...v1.1.3) (2026-09-25)
+
+
+### Bug Fixes
+
+* **bulk:** stop fetching through the Redfin tab after a batch deadline returns pending ([#244](https://github.com/chrischall/redfin-mcp/issues/244)) ([502d55d](https://github.com/chrischall/redfin-mcp/commit/502d55d05028e3b2b6473823e5821f9757c33929))
+* **deps:** take realty-core 0.4.8 address matching (wrong house, unit numbers) ([#246](https://github.com/chrischall/redfin-mcp/issues/246)) ([5e08a64](https://github.com/chrischall/redfin-mcp/commit/5e08a64bc3177d92502bcf47f4c5f9d25aae5185))
+
 ## [1.1.2](https://github.com/chrischall/redfin-mcp/compare/v1.1.1...v1.1.2) (2026-09-23)
 
 
