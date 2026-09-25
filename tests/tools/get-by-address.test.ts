@@ -356,6 +356,65 @@ describe('redfin_get_by_address tool', () => {
     expect(parsed.matched_via).toBe('search_fallback');
   });
 
+  it('SEARCH FALLBACK: a unit-bearing address still resolves to the street listing (realty-core 0.4.8)', async () => {
+    // gis homes carry the street line only. realty-core 0.4.7 anchored on
+    // EVERY number, so the unit id "5" in "Apt 5" had to appear in the
+    // candidate and the wrong-house gate rejected the right house.
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent(
+          (/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' ')
+        );
+        if (q === 'Lake Lure NC') {
+          return {
+            resultCode: 0,
+            payload: {
+              sections: [
+                {
+                  name: 'Places',
+                  rows: [
+                    { id: '2_555', name: 'Lake Lure', subName: 'NC, USA', url: '/city/555/NC/Lake-Lure' },
+                  ],
+                },
+              ],
+            },
+          };
+        }
+        return { resultCode: 0, payload: { sections: [{ name: 'Addresses', rows: [] }] } };
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        return {
+          resultCode: 0,
+          payload: {
+            serviceRegionName: 'Lake-Lure',
+            homes: [
+              {
+                propertyId: 99001,
+                url: '/NC/Lake-Lure/212-Ridgeway-Rd-28746/home/99001',
+                streetLine: { value: '212 Ridgeway Rd' },
+                city: 'Lake Lure',
+                state: 'NC',
+                zip: '28746',
+              },
+            ],
+          },
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await harness.callTool('redfin_get_by_address', {
+      address: '212 Ridgeway Rd Apt 5',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+    const parsed = parseToolResult<{ resolved: boolean; home_id?: string; matched_via?: string }>(result);
+    expect(parsed.resolved).toBe(true);
+    expect(parsed.home_id).toBe('99001');
+    expect(parsed.matched_via).toBe('search_fallback');
+  });
+
   it('SEARCH FALLBACK (#75): clean autocomplete hit → matched_via=autocomplete (back-compat)', async () => {
     mockFetchStingrayJson.mockResolvedValueOnce({
       resultCode: 0,
