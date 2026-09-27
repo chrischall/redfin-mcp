@@ -23,9 +23,10 @@ import type { RedfinClient } from '../client.js';
  * The probe runs through `client.fetchHtml` so Redfin's own non-2xx /
  * sign-in guards fire inside the round-trip, exactly as real tools see
  * them. The probe loop, error classification (`timeout` / `bridge_down` /
- * `session_not_ready` / `protocol` / `http` / `unknown`), post-probe
- * bridge projection, and the hint ladder all live upstream; only the
- * Redfin-specific bits are set here.
+ * `session_not_ready` / `protocol` / `http` / `capability_unavailable` /
+ * `capability_denied` / `unknown`), post-probe bridge projection, and the
+ * hint ladder all live upstream; only the Redfin-specific bits are set
+ * here.
  */
 
 const PROBE_PATH = '/robots.txt';
