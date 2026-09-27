@@ -41,6 +41,8 @@ open `www.redfin.com` tab, and its Chrome **Site access** allowing
 `redfin.com`. Pairing persists — after the first approval every later
 `fpx` call reuses it.
 
+ContextMint Bridge is the fetchproxy extension renamed, same maintainer (see https://github.com/chrischall/fetchproxy#extension); source at https://github.com/nullnet-app/contextmint-bridge — build it yourself or verify a release zip with `shasum -a 256 -c contextmint-bridge-chrome-<version>.zip.sha256`. Safari isn't available yet — use Chrome.
+
 ## Core call
 
 Almost every endpoint is a GET to a `/stingray/...` path. Redfin prefixes

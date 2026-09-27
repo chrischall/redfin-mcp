@@ -194,7 +194,7 @@ describe('redfin_healthcheck tool', () => {
     expect(parsed.ok).toBe(false);
     expect(parsed.error?.kind).toBe('timeout');
     expect(parsed.bridge.role).toBe('peer');
-    expect(parsed.hint).toMatch(/extension popup/i);
+    expect(parsed.hint).toMatch(/open the ContextMint Bridge popup/i);
     expect(parsed.hint).toMatch(/redfin-mcp/);
     // Shared envelope: the role lives on the `bridge` block and the timing
     // on `probe.elapsed_ms` — no per-error duplicates.
@@ -241,6 +241,25 @@ describe('redfin_healthcheck tool', () => {
     expect(parsed.hint).toMatch(/never bound a role/);
     // The real configured port, not a hardcoded literal.
     expect(parsed.hint).toMatch(/port 37149/);
+  });
+
+  it('labels a browser capability gap capability_unavailable — the browser, not the MCP, is at fault', async () => {
+    const client = stubClient({
+      fetchHtml: vi
+        .fn()
+        .mockRejectedValue(
+          new FetchproxyProtocolError(
+            'capability "download" is not available in this browser (safari)'
+          )
+        ),
+    });
+    const parsed = await run(client);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error?.kind).toBe('capability_unavailable');
+    expect(parsed.hint).toMatch(/This browser \(safari\) can't serve the "download" capability/);
+    expect(parsed.hint).toMatch(/The MCP isn't at fault/);
+    // Redfin's protocol-arm override must not shadow the capability arm.
+    expect(parsed.hint).not.toMatch(/no redfin\.com tab is open/i);
   });
 
   it('classifies a generic FetchproxyProtocolError as kind=protocol with the redfin.com-tab hint', async () => {
@@ -329,7 +348,8 @@ describe('redfin_healthcheck tool', () => {
     expect(parsed.error?.kind).toBe('session_not_ready');
     expect(parsed.bridge.session_state).toBe('extension_disconnected');
     expect(parsed.bridge.extension_connected).toBe(false);
-    expect(parsed.hint).toMatch(/No Transporter extension is attached/i);
+    expect(parsed.hint).toMatch(/ContextMint Bridge isn't attached to this bridge/);
+    expect(parsed.hint).not.toMatch(/Transporter/);
     expect(parsed.hint).toMatch(/www\.redfin\.com tab/);
   });
 

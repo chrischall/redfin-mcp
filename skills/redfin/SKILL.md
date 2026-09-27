@@ -34,7 +34,9 @@ MCP server for Redfin — natural-language access to listings, property records,
 Get it from the [ContextMint Bridge releases](https://github.com/nullnet-app/contextmint-bridge/releases):
 
 - **Chrome:** download the Chrome zip, unzip it, then `chrome://extensions` → Developer mode → Load unpacked → pick the unzipped folder.
-- **Safari:** the bridge ships inside the ContextMint app — install the app and enable the extension in Safari's settings.
+- **Safari:** not available yet (it will ship inside the ContextMint app, which has no public download) — use Chrome for now.
+
+ContextMint Bridge is the fetchproxy extension renamed, same maintainer (see https://github.com/chrischall/fetchproxy#extension); source at https://github.com/nullnet-app/contextmint-bridge — build it yourself or verify a release zip with `shasum -a 256 -c contextmint-bridge-chrome-<version>.zip.sha256`.
 
 ### 3. Open redfin.com and sign in.
 

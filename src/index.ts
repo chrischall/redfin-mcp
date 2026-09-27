@@ -3,7 +3,7 @@
 //
 // Boot sequence:
 //   1. Construct a FetchproxyTransport listening on 127.0.0.1:37149.
-//      The shared fetchproxy Chrome/Safari extension — installed
+//      The shared ContextMint Bridge extension — installed
 //      separately, not in this repo — connects here.
 //      See https://github.com/chrischall/fetchproxy.
 //   2. RedfinClient.start() — brings the transport up. This runs BEFORE
