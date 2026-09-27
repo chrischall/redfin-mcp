@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.4](https://github.com/chrischall/redfin-mcp/compare/v1.1.3...v1.1.4) (2026-09-27)
+
+
+### Bug Fixes
+
+* **deps:** move to [@fetchproxy](https://github.com/fetchproxy) 3.4 for ContextMint Bridge errors, capability subsets and managed pins ([#248](https://github.com/chrischall/redfin-mcp/issues/248)) ([d104094](https://github.com/chrischall/redfin-mcp/commit/d10409435da7e530be94ecec2e6cfb6b3a3d9074))
+* **deps:** move to @chrischall/mcp-utils 2.8 and [@fetchproxy](https://github.com/fetchproxy) 3.4.1 for clearer browser-bridge errors ([#250](https://github.com/chrischall/redfin-mcp/issues/250)) ([69e72bf](https://github.com/chrischall/redfin-mcp/commit/69e72bfb6f48e426b48fac1b02c6629ffa83f8c7))
+
+
+### Documentation
+
+* **healthcheck:** list capability_unavailable and capability_denied error kinds ([#252](https://github.com/chrischall/redfin-mcp/issues/252)) ([e50fa1d](https://github.com/chrischall/redfin-mcp/commit/e50fa1dc4a81e1708f89cf854369a501c79e904e))
+
 ## [1.1.3](https://github.com/chrischall/redfin-mcp/compare/v1.1.2...v1.1.3) (2026-09-25)
 
 
