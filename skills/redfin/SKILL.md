@@ -1,6 +1,6 @@
 ---
 name: redfin
-description: Look up real-estate listings, property details, market reports, and your saved homes/searches on Redfin via MCP. Triggers on phrases like "find homes on redfin in", "redfin property details for", "show my saved redfin homes", "what's my saved redfin search seeing", "what does redfin say about", "redfin market report for", or any request involving Redfin properties, prices, or your saved Redfin activity. Requires redfin-mcp installed and the fetchproxy extension active (see Setup below).
+description: Look up real-estate listings, property details, market reports, and your saved homes/searches on Redfin via MCP. Triggers on phrases like "find homes on redfin in", "redfin property details for", "show my saved redfin homes", "what's my saved redfin search seeing", "what does redfin say about", "redfin market report for", or any request involving Redfin properties, prices, or your saved Redfin activity. Requires redfin-mcp installed and the ContextMint Bridge extension active (see Setup below).
 ---
 
 # redfin-mcp
@@ -10,7 +10,7 @@ MCP server for Redfin — natural-language access to listings, property records,
 - **npm:** [npmjs.com/package/redfin-mcp](https://www.npmjs.com/package/redfin-mcp)
 - **Source:** [github.com/chrischall/redfin-mcp](https://github.com/chrischall/redfin-mcp)
 
-> ⚠️ Redfin does not publish a public consumer API. This server uses the same private `/stingray/...` endpoints the redfin.com web app calls, dispatched through your own signed-in browser tab via the fetchproxy extension. Use at your own discretion.
+> ⚠️ Redfin does not publish a public consumer API. This server uses the same private `/stingray/...` endpoints the redfin.com web app calls, dispatched through your own signed-in browser tab via the ContextMint Bridge extension. Use at your own discretion.
 
 ## Setup
 
@@ -29,16 +29,12 @@ MCP server for Redfin — natural-language access to listings, property records,
 }
 ```
 
-### 2. Install the fetchproxy extension (one-time, shared across all fetchproxy-based MCPs)
+### 2. Install the ContextMint Bridge extension (one-time, shared across all fetchproxy-based MCPs)
 
-```bash
-git clone https://github.com/chrischall/fetchproxy
-cd fetchproxy
-npm ci
-npm --workspace=@fetchproxy/extension-chrome run build
-```
+Get it from the [ContextMint Bridge releases](https://github.com/nullnet-app/contextmint-bridge/releases):
 
-Then in Chrome: `chrome://extensions` → Developer mode → Load unpacked → pick `packages/extension-chrome/dist/`.
+- **Chrome:** download the Chrome zip, unzip it, then `chrome://extensions` → Developer mode → Load unpacked → pick the unzipped folder.
+- **Safari:** the bridge ships inside the ContextMint app — install the app and enable the extension in Safari's settings.
 
 ### 3. Open redfin.com and sign in.
 

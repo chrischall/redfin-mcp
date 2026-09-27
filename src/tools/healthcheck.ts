@@ -8,8 +8,8 @@ import type { RedfinClient } from '../client.js';
  *
  * Round-trips `/robots.txt` on www.redfin.com through the full bridge so
  * the user can tell — with ONE tool call, without needing a real search —
- * whether the WebSocket bridge is up (`bridge.role`), the Transporter
- * extension is linked (`bridge.session_state` / `pending_pair_code` /
+ * whether the WebSocket bridge is up (`bridge.role`), the ContextMint
+ * Bridge extension is linked (`bridge.session_state` / `pending_pair_code` /
  * `extension_connected` / `last_extension_message_at`), and the active
  * redfin.com tab is responsive (the fetch resolved within the timeout).
  *

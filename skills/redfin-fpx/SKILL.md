@@ -16,7 +16,7 @@ description: >-
 Redfin fronts `www.redfin.com` — including every `/stingray/...` JSON
 endpoint — with an AWS WAF challenge that blocks plain `curl`/Node
 requests regardless of headers. `fpx` routes the request through the
-user's own signed-in browser tab (the Transporter extension), which has
+user's own signed-in browser tab (the ContextMint Bridge extension), which has
 already cleared the challenge, so the same request succeeds. Most reads
 are anonymous (no Redfin login needed — just an open tab); the saved-homes
 and saved-searches endpoints additionally require the tab to be signed in
@@ -32,10 +32,11 @@ at the session level.
 ```sh
 npm install -g @fetchproxy/cli              # provides `fpx`
 fpx profile add redfin --domain redfin.com  # only the fetch capability is needed
-fpx pair -p redfin                          # prints a pair code → approve in Transporter
+fpx pair -p redfin                          # prints a pair code → approve in ContextMint Bridge
 ```
 
-Requirements: the **Transporter** browser extension installed, with an
+Requirements: the **ContextMint Bridge** browser extension installed
+(from https://github.com/nullnet-app/contextmint-bridge/releases), with an
 open `www.redfin.com` tab, and its Chrome **Site access** allowing
 `redfin.com`. Pairing persists — after the first approval every later
 `fpx` call reuses it.

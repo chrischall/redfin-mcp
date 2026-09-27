@@ -80,7 +80,7 @@ await runMcp({
   ],
   banner:
     `[redfin-mcp] v${VERSION} — WebSocket bridge via @fetchproxy/server on 127.0.0.1:${port ?? 37149}. ` +
-    'Install the fetchproxy extension (see https://github.com/chrischall/fetchproxy) ' +
+    'Install the ContextMint Bridge extension (see https://github.com/nullnet-app/contextmint-bridge/releases) ' +
     'and sign into redfin.com. This project was developed and is maintained by AI (Claude). ' +
     'Use at your own discretion.',
   shutdown: { onSignal: () => client.close() },
