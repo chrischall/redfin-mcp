@@ -8,6 +8,7 @@ import {
 import { runBoundedBatch } from '@chrischall/mcp-utils';
 import { viewArg, viewResponse } from '../view.js';
 import type { RedfinClient } from '../client.js';
+import { errorRow, pendingRow } from '@chrischall/realty-core';
 import { DeadlineAbandonedError, throwIfAborted } from '../deadline.js';
 import { minifiedResult } from '../mcp.js';
 import {
@@ -42,8 +43,11 @@ const OVERALL_DEADLINE_MS = 45_000;
 /**
  * `classifyRowError` row-error kinds, plus `pending` for an
  * overall-deadline cut. `'ok'` is implied by `resolved: true`. These are
- * surfaced as a machine-readable `status` so a bridge timeout is never
- * mistaken for a genuine no-match (D2, the #78 bug class).
+ * surfaced as a machine-readable `status` (and the same value as
+ * `error_kind`, realty-core's row fields — fleet-audit#1091) so a bridge
+ * timeout is never mistaken for a genuine no-match (D2, the #78 bug class).
+ * `retryable` comes from realty-core's DEFAULT_RETRYABLE_ROW_KINDS
+ * (`timeout` / `bridge_down` / `pending`).
  */
 type ResolveRowStatus =
   | 'timeout'
@@ -51,13 +55,6 @@ type ResolveRowStatus =
   | 'protocol'
   | 'pending'
   | 'other';
-
-/** Statuses where re-issuing the same row could plausibly succeed. */
-const RETRYABLE_ROW_KINDS = new Set<ResolveRowStatus>([
-  'timeout',
-  'bridge_down',
-  'pending',
-]);
 
 /**
  * Tuning knobs. Tests inject a tiny `overallDeadlineMs` so the suite
@@ -115,6 +112,8 @@ interface ResolvedAddressRow {
    * absent (the #78 bug class).
    */
   status?: ResolveRowStatus;
+  /** Same value as `status` on a failed row (realty-core row fields). */
+  error_kind?: ResolveRowStatus;
   /**
    * Whether re-issuing this exact row could plausibly succeed. Set
    * alongside `status` on transient-failure rows.
@@ -200,15 +199,10 @@ async function resolveOne(
     // genuine no-match (`resolved: false`) — the reporter nearly recorded
     // real properties as absent. classifyRowError gives the discriminator
     // + the canonical wrapper string.
-    const { kind, message } = classifyRowError(e);
-    return {
-      input,
-      query: fallbackQuery,
-      resolved: false,
-      status: kind,
-      retryable: RETRYABLE_ROW_KINDS.has(kind),
-      error: message,
-    };
+    return errorRow(
+      { input, query: fallbackQuery, resolved: false },
+      classifyRowError(e)
+    ) as ResolvedAddressRow;
   }
 }
 
@@ -273,18 +267,10 @@ export function registerResolveAddressesTools(
                 : [input.street, input.city, input.state, input.zip]
                     .filter((s): s is string => Boolean(s && s.trim()))
                     .join(' ');
-            return {
-              input,
-              query: fallbackQuery,
-              resolved: false,
-              status: 'pending',
-              retryable: true,
-              error:
-                'resolve_addresses overall deadline reached before this row ' +
-                'settled — the request is still pending (likely a slow/hung ' +
-                'sub-request). Re-run just the pending addresses; a single ' +
-                'slow row no longer wedges the batch.',
-            };
+            return pendingRow(
+              { input, query: fallbackQuery, resolved: false },
+              'redfin_resolve_addresses'
+            ) as ResolvedAddressRow;
           },
         }
       );

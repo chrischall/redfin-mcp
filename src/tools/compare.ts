@@ -1,16 +1,13 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { BRIDGE_CONCURRENCY } from '@chrischall/mcp-utils/fetchproxy';
-import { runBoundedBatch } from '@chrischall/mcp-utils';
 import type { RedfinClient } from '../client.js';
 import { viewArg, viewResponse } from '../view.js';
 import type { FormattedProperty } from './properties.js';
+import { pivotSummary } from '@chrischall/realty-core';
 import {
   OVERALL_DEADLINE_MS,
-  fetchPropertyRow,
-  pendingPropertyRow,
+  runPropertyRows,
   type BulkGetTuning,
-  type BulkPerProperty,
 } from './bulk-get.js';
 
 /**
@@ -32,43 +29,38 @@ export interface CompareSummaryRow {
   values: Array<number | string | null>;
 }
 
-type ComparePerProperty = Pick<
-  BulkPerProperty,
-  'property_id' | 'url' | 'property' | 'error'
-> &
-  Partial<Pick<BulkPerProperty, 'status' | 'retryable'>>;
+type ComparePerProperty = {
+  property_id?: number;
+  url: string;
+  property?: FormattedProperty;
+};
 
-export function buildSummary(rows: ComparePerProperty[]): CompareSummaryRow[] {
-  const pick = (
-    label: string,
-    fn: (p: FormattedProperty) => number | string | null | undefined
-  ): CompareSummaryRow => ({
-    field: label,
-    values: rows.map((r) => (r.property ? fn(r.property) ?? null : null)),
-  });
-  // Summary fields match the per-row property shape exactly — same
-  // primitive type, same null semantics. No JSON-stringified compound
-  // values; that was the onehome bug class #37 tracks.
-  return [
-    pick('price', (p) => p.price),
-    pick('price_per_sqft', (p) => p.price_per_sqft),
-    pick('price_drop_amount', (p) => p.price_drop_amount),
-    pick('price_drop_percent', (p) => p.price_drop_percent),
-    pick('beds', (p) => p.beds),
-    pick('baths', (p) => p.baths),
-    pick('sqft', (p) => p.sqft),
-    pick('lot_size', (p) => p.lot_size),
-    pick('lot_size_acres', (p) => p.lot_size_acres),
-    pick('year_built', (p) => p.year_built),
-    pick('status', (p) => p.status),
-    pick('cumulative_days_on_market', (p) => p.cumulative_days_on_market),
-    pick('hoa_monthly_usd', (p) => p.hoa_monthly_usd),
-    pick('tax_annual', (p) => p.tax_annual),
-    pick('last_sold_price', (p) => p.last_sold_price),
-    pick('last_sold_date', (p) => p.last_sold_date),
-    pick('city', (p) => p.city),
-    pick('zip', (p) => p.zip),
-  ];
+export function buildSummary(
+  rows: ReadonlyArray<ComparePerProperty>
+): CompareSummaryRow[] {
+  // realty-core `pivotSummary` (fleet-audit#1091): summary fields match the
+  // per-row property shape exactly — same primitive type, same null
+  // semantics (#37) — `undefined` / failed row → null.
+  return pivotSummary<FormattedProperty>(rows, [
+    'price',
+    'price_per_sqft',
+    'price_drop_amount',
+    'price_drop_percent',
+    'beds',
+    'baths',
+    'sqft',
+    'lot_size',
+    'lot_size_acres',
+    'year_built',
+    'status',
+    'cumulative_days_on_market',
+    'hoa_monthly_usd',
+    'tax_annual',
+    'last_sold_price',
+    'last_sold_date',
+    'city',
+    'zip',
+  ]) as CompareSummaryRow[];
 }
 
 interface CompareTarget {
@@ -128,32 +120,17 @@ export function registerCompareTools(
       }),
     },
     async ({ targets, include_description, include_summary, view }) => {
-      const results: ComparePerProperty[] = await runBoundedBatch<
-        CompareTarget,
-        BulkPerProperty
-      >(
-        targets as CompareTarget[],
-        (t, signal) =>
-          fetchPropertyRow(
-            client,
-            t,
-            include_description === true,
-            signal,
-            'compare_properties'
-          ),
-        {
-          deadlineMs: overallDeadlineMs,
-          concurrency: BRIDGE_CONCURRENCY,
-          onTimeout: (t) => pendingPropertyRow(t, 'compare_properties'),
-        }
-      );
-      const pending = results.filter((r) => r.status === 'pending').length;
-      return viewResponse(view, {
-        count: results.length,
-        ...(pending > 0 ? { pending } : {}),
-        ...(include_summary === true ? { summary: buildSummary(results) } : {}),
-        results,
+      const envelope = await runPropertyRows(client, targets as CompareTarget[], {
+        includeDescription: include_description === true,
+        deadlineMs: overallDeadlineMs,
+        toolLabel: 'redfin_compare_properties',
       });
+      return viewResponse(
+        view,
+        include_summary === true
+          ? { ...envelope, summary: buildSummary(envelope.results) }
+          : envelope
+      );
     }
   );
 }

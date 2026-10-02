@@ -32,5 +32,12 @@ export function registerSessionTools(
   registerSharedSessionTools(server, registry, {
     prefix: 'redfin',
     serviceLabel: 'Redfin',
+    // Nothing in redfin-mcp reads the registry to route a request — every
+    // call rides the one bound browser tab — so the descriptions must not
+    // promise routing (fleet-audit#1092, redfin #889).
+    routing: 'label-only',
+    labelOnlyNote:
+      'Every redfin tool call goes through whichever browser tab the ContextMint Bridge ' +
+      'extension is signed into; to read a different account, sign that tab into it.',
   });
 }

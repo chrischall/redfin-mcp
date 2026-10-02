@@ -33,6 +33,7 @@ import {
   priceDrop as priceDropCore,
   buildHyperlinkFormula,
   lastSold as lastSoldCore,
+  hoaToMonthlyUsd as hoaToMonthlyUsdCore,
 } from '@chrischall/realty-core';
 
 // Byte-identical re-exports — these now live canonically in realty-core.
@@ -43,7 +44,21 @@ import {
 // formatter already pre-nulls a 0/absent lotSqFt). Kept under the local
 // name so call sites read as `lot_size_acres`.
 export { sqftToAcres as lotSizeAcres } from '@chrischall/realty-core';
-export { hoaToMonthlyUsd } from '@chrischall/realty-core';
+/**
+ * realty-core's `hoaToMonthlyUsd`, keeping redfin's stderr breadcrumb for
+ * unrecognised frequency vocabulary — realty-core >= 0.5 never writes to
+ * the console itself (fleet-audit#664) and takes an `onUnknownFrequency`
+ * callback instead.
+ */
+export function hoaToMonthlyUsd(
+  amount: Parameters<typeof hoaToMonthlyUsdCore>[0],
+  frequency: Parameters<typeof hoaToMonthlyUsdCore>[1]
+): number | null {
+  return hoaToMonthlyUsdCore(amount, frequency, {
+    onUnknownFrequency: (raw) =>
+      console.error(`[redfin-mcp] unknown HOA frequency "${raw}"`),
+  });
+}
 // CANONICAL DELTA (#36): the not-yet-assessed sentinel threshold widened
 // from redfin's `=== 0 || === 1` to realty-core's `< 10` (calibrated by
 // homes-mcp against real new-build listings returning tax_annual 2–9).

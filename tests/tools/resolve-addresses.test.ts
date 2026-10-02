@@ -173,6 +173,8 @@ describe('redfin_resolve_addresses tool', () => {
     expect(parsed.results[0].status).toBe('timeout');
     expect(parsed.results[0].retryable).toBe(true);
     expect(parsed.results[0].error).toMatch(/bridge timeout after retry/);
+    // realty-core row fields (fleet-audit#1091): `error_kind` mirrors status.
+    expect((parsed.results[0] as { error_kind?: string }).error_kind).toBe('timeout');
   });
 
   it('retries a transient timeout once before surfacing it (#78)', async () => {
@@ -295,6 +297,7 @@ describe('redfin_resolve_addresses tool', () => {
       expect(parsed.results[1].resolved).toBe(false);
       expect(parsed.results[1].status).toBe('pending');
       expect(parsed.results[1].retryable).toBe(true);
+      expect((parsed.results[1] as { error_kind?: string }).error_kind).toBe('pending');
       expect(parsed.pending).toBe(1);
       await deadlineHarness.close();
     }, 5000);

@@ -95,3 +95,10 @@ describe('whitespace', () => {
     expect(JSON.parse(text).remarks).toBe(remarks);
   });
 });
+
+describe('shared realty-core view helpers (fleet-audit#1175)', () => {
+  it('RF_VIEWS is realty-core REALTY_VIEWS', async () => {
+    const { REALTY_VIEWS } = await import('@chrischall/realty-core');
+    expect(RF_VIEWS).toBe(REALTY_VIEWS);
+  });
+});

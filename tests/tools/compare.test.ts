@@ -200,6 +200,9 @@ describe('redfin_compare_properties tool', () => {
     expect(parsed.results[0].property?.price).toBe(500);
     expect(parsed.results[1].error).toMatch(/boom/);
     expect(parsed.results[2].property?.price).toBe(500);
+    // Cohort row envelope (fleet-audit#1091).
+    expect(parseToolResult<{ ok: number; errored: number }>(r)).toMatchObject({ ok: 2, errored: 1 });
+    expect(parsed.results[1]).toMatchObject({ status: 'other', error_kind: 'other', retryable: false });
   });
 
   it('omits description by default and surfaces extracted_features per record', async () => {

@@ -1,4 +1,5 @@
-import { minifiedResult, resolveView, stripMediaUrls, viewParam, type View } from '@chrischall/mcp-utils';
+import * as mcpUtils from '@chrischall/mcp-utils';
+import { makeViewHelpers, REALTY_VIEWS } from '@chrischall/realty-core';
 
 /**
  * The rungs this server honours (`@chrischall/mcp-utils`' `view` vocabulary;
@@ -20,15 +21,7 @@ import { minifiedResult, resolveView, stripMediaUrls, viewParam, type View } fro
  * this one and will save considerably more. Until then this is the honest
  * ceiling, and this docblock says so rather than implying a shape was checked.
  */
-export const RF_VIEWS = ['compact', 'full'] as const;
-
-const NOTE =
-  'compact strips image/avatar URLs from the response; "full" returns Redfin\'s payload untouched. ' +
-  'No field projection: this server has no verified record of which Redfin fields matter, and inventing ' +
-  'one would risk dropping a field a caller needs.';
-
-/** The `view` parameter every read tool in this server takes. */
-export const viewArg = (): ReturnType<typeof viewParam> => viewParam(RF_VIEWS, { note: NOTE });
+export const RF_VIEWS = REALTY_VIEWS;
 
 /**
  * Answer in the requested rung.
@@ -72,7 +65,8 @@ const KEEP = ['image_url', 'thumbnail_url'] as const;
  */
 const DROP = ['primary_photo_url'] as const;
 
-export function viewResponse(view: string | undefined, data: unknown): ReturnType<typeof minifiedResult> {
-  const rung: View = resolveView(view, RF_VIEWS);
-  return minifiedResult(rung === 'compact' ? stripMediaUrls(data, { keep: KEEP, drop: DROP }) : data);
-}
+export const { viewArg, viewResponse } = makeViewHelpers(mcpUtils, {
+  portal: 'Redfin',
+  keep: KEEP,
+  drop: DROP,
+});

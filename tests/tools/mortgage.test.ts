@@ -167,3 +167,20 @@ describe('redfin_calculate_mortgage tool', () => {
     );
   });
 });
+
+describe('redfin_calculate_mortgage schema caps (realty-core shared registrar, fleet-audit#1090)', () => {
+  it('advertises loan_term_years.maximum = MAX_LOAN_TERM_YEARS', async () => {
+    const { MAX_LOAN_TERM_YEARS } = await import('@chrischall/realty-core');
+    const { registerMortgageTools } = await import('../../src/tools/mortgage.js');
+    const { createTestHarness } = await import('@chrischall/mcp-utils/test');
+    const th = await createTestHarness((server) => registerMortgageTools(server));
+    try {
+      const { tools } = await th.client.listTools();
+      const props = tools.find((t) => t.name === 'redfin_calculate_mortgage')!.inputSchema
+        .properties as Record<string, { maximum?: number }>;
+      expect(props.loan_term_years.maximum).toBe(MAX_LOAN_TERM_YEARS);
+    } finally {
+      await th.close();
+    }
+  });
+});

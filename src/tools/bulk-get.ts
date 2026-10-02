@@ -7,7 +7,7 @@ import {
 } from '@chrischall/mcp-utils/fetchproxy';
 import { runBoundedBatch } from '@chrischall/mcp-utils';
 import type { RedfinClient } from '../client.js';
-import { DeadlineAbandonedError, throwIfAborted } from '../deadline.js';
+import { runRowBatch } from '@chrischall/realty-core';
 import { viewArg, viewResponse } from '../view.js';
 import {
   fetchAndFormatProperty,
@@ -46,28 +46,6 @@ const MAX_TARGETS = 200;
 export const OVERALL_DEADLINE_MS = 45_000;
 
 /**
- * Backfill for a row the overall deadline cut off before it settled.
- * The identity comes from the original target so the row stays
- * re-runnable; a `pending` row is NEVER a generic miss / not-found.
- */
-export function pendingPropertyRow(
-  target: BulkTarget,
-  toolLabel: string
-): BulkPerProperty {
-  return {
-    property_id: target.property_id,
-    url: target.url ?? '',
-    status: 'pending',
-    retryable: true,
-    error:
-      `${toolLabel} overall deadline reached before this row settled — ` +
-      'the request is still pending (likely a slow/hung sub-request). ' +
-      'Re-run just the pending targets; a single slow row no longer ' +
-      'wedges the batch.',
-  };
-}
-
-/**
  * Tuning knobs. Defaults are the production values; tests inject a tiny
  * `overallDeadlineMs` so the suite doesn't wait on real wall-clock.
  */
@@ -88,96 +66,45 @@ export interface BulkTarget {
 }
 
 /**
- * Per-row outcome status. `'ok'` for a fetched property; `'pending'`
- * when the overall deadline cut the row off before it settled; otherwise
- * the `classifyRowError` kind so the cohort's "20-of-20 with X timeouts"
- * summary reporting can branch without re-parsing the message string.
- */
-type BulkRowStatus =
-  | 'ok'
-  | 'timeout'
-  | 'bridge_down'
-  | 'protocol'
-  | 'pending'
-  | 'other';
-
-export interface BulkPerProperty {
-  property_id?: number;
-  url: string;
-  /** Row outcome. Always present so callers never infer it from `error`. */
-  status: BulkRowStatus;
-  property?: FormattedProperty;
-  error?: string;
-  /**
-   * Whether re-issuing this exact row could plausibly succeed. Only set
-   * on error rows — `'timeout'`/`'bridge_down'` are transient bridge
-   * conditions (true); `'protocol'`/`'other'` (including a genuine "no
-   * listing found" miss) are not (false).
-   */
-  retryable?: boolean;
-}
-
-/**
- * `classifyRowError` kinds that are transient bridge conditions worth a
- * caller-side retry. `protocol` (no_tab / domain_denied) and `other`
- * (genuine misses, programmer errors) are structural — re-issuing the
- * same row won't change the outcome. `pending` (an overall-deadline cut)
- * is transient too — the row never settled, so a re-run can succeed.
- */
-const RETRYABLE_ROW_KINDS = new Set(['timeout', 'bridge_down', 'pending']);
-
-/**
- * Fetch one property into a per-row result, never throwing. Shared with
- * `redfin_compare_properties` (fleet-audit #220) so both tools get the
- * same retry-once-on-timeout + typed row-error classification.
+ * Fetch one property's row fields, throwing on failure. Shared with
+ * `redfin_compare_properties` (fleet-audit #220). realty-core's
+ * `runRowBatch` (fleet-audit#1091) wraps it: retry-once-on-timeout (#78/D3,
+ * the rotating-tab tax), the batch deadline signal checked before every
+ * attempt including the retry (#956), and the typed row-error
+ * classification — `status` = `error_kind` = the `classifyRowError` kind,
+ * `retryable` for `timeout` / `bridge_down` / `pending` — so a timeout
+ * stays distinguishable from a genuine "no listing found" miss.
  */
 export async function fetchPropertyRow(
   client: RedfinClient,
   t: BulkTarget,
   includeDescription: boolean,
-  signal?: AbortSignal,
-  toolLabel = 'bulk_get'
-): Promise<BulkPerProperty> {
-  try {
-    // Shared resolveIds → parallel ATF/BTF → format pipeline (same one
-    // get_property + compare_properties use). Wrapped in retryOnceOnTimeout
-    // (#78/D3) so a single FetchproxyTimeoutError — the rotating-tab /
-    // SW-eviction tax that hits the first request to a stale tab — gets one
-    // retry before the row fails, matching zillow/homes/onehome.
-    //
-    // `signal` is the batch deadline (#956): checked inside the retry
-    // closure so a row the deadline already answered `pending` neither
-    // starts nor retries a fetch through the user's tab.
-    const { ids, canonicalUrl, property } = await retryOnceOnTimeout(() => {
-      throwIfAborted(signal);
-      return fetchAndFormatProperty(client, t, { includeDescription, signal });
-    });
-    return {
-      property_id: ids.propertyId,
-      url: canonicalUrl,
-      status: 'ok',
-      property,
-    };
-  } catch (e) {
-    // Abandoned by the batch deadline: runBoundedBatch has already
-    // backfilled this slot, so this value is never read — keep it honest.
-    if (e instanceof DeadlineAbandonedError) {
-      return pendingPropertyRow(t, toolLabel);
+  signal?: AbortSignal
+): Promise<{ property_id: number; url: string; property?: FormattedProperty }> {
+  const { ids, canonicalUrl, property } = await fetchAndFormatProperty(client, t, {
+    includeDescription,
+    signal,
+  });
+  return { property_id: ids.propertyId, url: canonicalUrl, property };
+}
+
+/** Run the bulk / compare fan-out through realty-core's `runRowBatch`. */
+export function runPropertyRows(
+  client: RedfinClient,
+  targets: BulkTarget[],
+  opts: { includeDescription: boolean; deadlineMs: number; toolLabel: string }
+) {
+  return runRowBatch(
+    targets,
+    (t, signal) => fetchPropertyRow(client, t, opts.includeDescription, signal),
+    {
+      kit: { runBoundedBatch, classifyRowError, retryOnceOnTimeout },
+      toolLabel: opts.toolLabel,
+      rowBase: (t) => ({ property_id: t.property_id, url: t.url ?? '' }),
+      deadlineMs: opts.deadlineMs,
+      concurrency: BRIDGE_CONCURRENCY,
     }
-    // Swap the old ad-hoc `(e as Error).message` wrap for the cohort's
-    // typed classifier (fetchproxy 0.10.0). It hands back both the kind
-    // — so the batch summary can keep timeouts distinguishable from a
-    // genuine "no listing found" miss (round-3 #78) — and the
-    // standardized user-facing message string the cohort settled on.
-    const { kind, message } = classifyRowError(e);
-    return {
-      property_id: t.property_id,
-      url: t.url ?? '',
-      status: kind,
-      retryable: RETRYABLE_ROW_KINDS.has(kind),
-      error: message,
-    };
-  }
+  );
 }
 
 export function registerBulkGetTools(
@@ -244,43 +171,15 @@ export function registerBulkGetTools(
     async ({ targets, include_description, view }) => {
       const targetList = targets as BulkTarget[];
 
-      // `runBoundedBatch` (mcp-utils 0.8, hoisted from exactly this pattern):
-      // index-addressable slots + an overall hard deadline (D1) +
-      // concurrency-bounded fan-out, returning one row per input in input
-      // order. When the deadline fires, every still-unsettled slot is filled
-      // by `onTimeout` (a retryable `pending` row) and the in-flight workers
-      // are abandoned — so a single permanently-hung row can't wedge the
-      // connection past the bound. `fetchOne` already catches per-row errors
-      // and returns an error row, so the batch never rejects; the default
-      // `onError` (→ `onTimeout`) only guards the unreachable throw case.
-      const results = await runBoundedBatch<BulkTarget, BulkPerProperty>(
-        targetList,
-        (target, signal) =>
-          fetchPropertyRow(
-            client,
-            target,
-            include_description === true,
-            signal,
-            'bulk_get'
-          ),
-        {
-          deadlineMs: overallDeadlineMs,
-          concurrency: BRIDGE_CONCURRENCY,
-          onTimeout: (target) => pendingPropertyRow(target, 'bulk_get'),
-        }
-      );
-
-      const ok = results.filter((r) => r.status === 'ok').length;
-      const errored = results.length - ok;
-      const pending = results.filter((r) => r.status === 'pending').length;
-      const envelope: {
-        count: number;
-        ok: number;
-        errored: number;
-        pending?: number;
-        results: BulkPerProperty[];
-      } = { count: results.length, ok, errored, results };
-      if (pending > 0) envelope.pending = pending;
+      // realty-core `runRowBatch` (fleet-audit#1091): bounded fan-out, an
+      // overall hard deadline (D1) with retryable `pending` backfill, one
+      // input-ordered row per target, and the
+      // `{ count, ok, errored, pending?, results }` envelope.
+      const envelope = await runPropertyRows(client, targetList, {
+        includeDescription: include_description === true,
+        deadlineMs: overallDeadlineMs,
+        toolLabel: 'redfin_bulk_get',
+      });
       return viewResponse(view, envelope);
     }
   );

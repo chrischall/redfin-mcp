@@ -19,28 +19,22 @@
  */
 
 import { createCachedJsonArrayLoader } from '@chrischall/mcp-utils';
-import { extractFeatures, type ExtractedFeatures } from '@chrischall/realty-core';
+import {
+  DEFAULT_COMMUNITIES as CORE_DEFAULT_COMMUNITIES,
+  extractFeatures,
+  type ExtractedFeatures,
+} from '@chrischall/realty-core';
 
 export { extractFeatures };
 export type { ExtractedFeatures };
 
 /**
- * Default community vocabulary for the Lake Lure / mountain-NC market.
- * Override via the `REDFIN_COMMUNITIES_FILE` env var (JSON file
+ * Default community vocabulary for the Lake Lure / mountain-NC market —
+ * realty-core's shared, frozen list (fleet-audit#1175), copied because the
+ * loader's `defaults` takes a mutable `string[]`. Override via the `REDFIN_COMMUNITIES_FILE` env var (JSON file
  * containing a string array) — see `loadCommunities`.
  */
-export const DEFAULT_COMMUNITIES: string[] = [
-  'Rumbling Bald',
-  'Riverbend at Lake Lure',
-  'The Lodges at Eagles Nest',
-  'Hunters Ridge',
-  'Beech Mountain Club',
-  'The Cliffs',
-  'Pinnacle Ridge',
-  'Highland Heights',
-  'Shelter Rock',
-  'Charter Hills',
-];
+export const DEFAULT_COMMUNITIES: string[] = [...CORE_DEFAULT_COMMUNITIES];
 
 /**
  * Resolve the active community vocabulary. Reads

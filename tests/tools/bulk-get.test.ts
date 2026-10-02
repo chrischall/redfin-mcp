@@ -119,6 +119,9 @@ describe('redfin_bulk_get tool', () => {
     expect(parsed.errored).toBe(1);
     expect(parsed.results[0].status).toBe('timeout');
     expect(parsed.results[0].retryable).toBe(true);
+    // Cohort row envelope (fleet-audit#1091): zillow-style `error_kind`
+    // alongside redfin's `status`.
+    expect((parsed.results[0] as { error_kind?: string }).error_kind).toBe('timeout');
     // The standardized cohort wrapper string — must stay distinguishable
     // from "no listing found".
     expect(parsed.results[0].error).toMatch(/bridge timeout after retry/);

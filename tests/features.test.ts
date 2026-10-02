@@ -283,3 +283,11 @@ describe('loadCommunities', () => {
     }
   });
 });
+
+describe('DEFAULT_COMMUNITIES (fleet-audit#1175)', () => {
+  it('is the shared realty-core vocabulary', async () => {
+    const core = await import('@chrischall/realty-core');
+    const { DEFAULT_COMMUNITIES } = await import('../src/features.js');
+    expect(DEFAULT_COMMUNITIES).toEqual([...core.DEFAULT_COMMUNITIES]);
+  });
+});

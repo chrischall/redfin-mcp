@@ -1,23 +1,20 @@
 /**
- * Cooperative cancellation for `runBoundedBatch` workers (fleet-audit #956).
+ * Cooperative cancellation for batch workers (fleet-audit #956).
  *
- * `runBoundedBatch` (mcp-utils <= 2.6.0) aborts the `signal` it hands each
- * worker when the overall deadline fires and answers the unsettled rows
- * `pending` — but its runners keep dequeuing the next item and never stop
- * an in-flight worker. Every fetch a worker issues after that point goes
- * through the user's signed-in redfin.com tab for a result nobody reads,
- * while the caller is re-running the same `pending` rows. Workers call
- * {@link throwIfAborted} before each request (and inside the
- * retry-once-on-timeout closure) so an abandoned row stops at the next
- * request boundary.
+ * A batch worker that issues several requests per row (climate's page +
+ * data fetch, the resolver's rung ladder) calls {@link throwIfAborted}
+ * before each one, so a row the overall deadline already answered
+ * `pending` stops at the next request boundary instead of fetching
+ * through the user's signed-in redfin.com tab for a result nobody reads.
+ * (mcp-utils >= 2.12 `runBoundedBatch` itself stops dequeuing once the
+ * deadline or the caller's cancel fires; this guard covers the requests
+ * INSIDE an in-flight row.)
+ *
+ * Both now come from realty-core (`RowAbandonedError` / `throwIfAborted`,
+ * fleet-audit#1091) — byte-for-byte the local copies they replace —
+ * re-exported under redfin's existing names.
  */
-export class DeadlineAbandonedError extends Error {
-  constructor() {
-    super('batch overall deadline reached; row abandoned');
-    this.name = 'DeadlineAbandonedError';
-  }
-}
-
-export function throwIfAborted(signal: AbortSignal | undefined): void {
-  if (signal?.aborted) throw new DeadlineAbandonedError();
-}
+export {
+  RowAbandonedError as DeadlineAbandonedError,
+  throwIfAborted,
+} from '@chrischall/realty-core';

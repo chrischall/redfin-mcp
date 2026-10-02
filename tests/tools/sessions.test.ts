@@ -119,3 +119,16 @@ describe('session tools (shared registry)', () => {
     expect(text).toMatch(/Unknown session_id/);
   });
 });
+
+describe('session tool descriptions are label-only (fleet-audit#1092)', () => {
+  it('none of the trio promises routing or a per-call session_id override', async () => {
+    const tools = (await harness.listTools()).filter((t) => t.name.includes('session'));
+    expect(tools).toHaveLength(3);
+    for (const t of tools) {
+      expect(t.description).not.toMatch(/route/i);
+      expect(t.description).not.toMatch(/override/i);
+      expect(t.description).toMatch(/label only/i);
+      expect(t.description).toMatch(/browser tab/);
+    }
+  });
+});
