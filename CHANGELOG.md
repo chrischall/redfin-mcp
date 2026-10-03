@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.5](https://github.com/chrischall/redfin-mcp/compare/v1.1.4...v1.1.5) (2026-10-03)
+
+
+### Bug Fixes
+
+* **deps:** adopt @chrischall/mcp-utils 2.12.0 and realty-core 0.5.1 shared tools ([#256](https://github.com/chrischall/redfin-mcp/issues/256)) ([02331e7](https://github.com/chrischall/redfin-mcp/commit/02331e73ba7be94a51c2040b36d73d069fa4b588))
+* **deps:** bump @chrischall/mcp-utils to 2.13.0 and realty-core to 0.6.0 ([#257](https://github.com/chrischall/redfin-mcp/issues/257)) ([7f62bab](https://github.com/chrischall/redfin-mcp/commit/7f62babe9b97a0f7f3c537fac75d129072f89e83))
+* keep credentials and report edge_blocked on CDN/WAF blocks (mcp-utils 2.10.0) ([#255](https://github.com/chrischall/redfin-mcp/issues/255)) ([26e6e10](https://github.com/chrischall/redfin-mcp/commit/26e6e1088e63a208d07dfed3b29f3a9f53cf0ec0))
+* report CDN/WAF blocks as edge_blocked, not a rejected credential (mcp-utils 2.9.0) ([#253](https://github.com/chrischall/redfin-mcp/issues/253)) ([d708fd0](https://github.com/chrischall/redfin-mcp/commit/d708fd03715f2a2b50d200d87e5e404b72d2a6c5))
+
 ## [1.1.4](https://github.com/chrischall/redfin-mcp/compare/v1.1.3...v1.1.4) (2026-09-27)
 
 
