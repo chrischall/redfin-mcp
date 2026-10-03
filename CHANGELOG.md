@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.6](https://github.com/chrischall/redfin-mcp/compare/v1.1.5...v1.1.6) (2026-10-03)
+
+
+### Bug Fixes
+
+* **deps:** bump @fetchproxy/server from 3.4.1 to 3.5.0 in the production-dependencies group ([#260](https://github.com/chrischall/redfin-mcp/issues/260)) ([e8f342a](https://github.com/chrischall/redfin-mcp/commit/e8f342a9199c77f85ecec6bf179f8c1f7df189ab))
+
 ## [1.1.5](https://github.com/chrischall/redfin-mcp/compare/v1.1.4...v1.1.5) (2026-10-03)
 
 
