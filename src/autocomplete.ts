@@ -69,13 +69,27 @@ interface AutocompletePayload {
  * Returns null on malformed input.
  */
 export function parseRegionId(
-  id: string | undefined
+  id: string | undefined,
+  url?: string
 ): { region_id: number; region_type: number } | null {
   if (!id) return null;
   const m = /^(\d+)_(\d+)$/.exec(id);
   if (!m) return null;
-  return { region_type: parseInt(m[1], 10), region_id: parseInt(m[2], 10) };
+  // The id prefix is autocomplete's own type code, which no longer matches
+  // gis `region_type` (Oct 2026: cities come back as "2_<id>", and gis reads
+  // type 2 as a ZIP). The row's URL names the kind unambiguously, so prefer it.
+  const kind = url ? /^\/(city|zipcode|neighborhood|county)\//.exec(url)?.[1] : undefined;
+  const region_type = kind ? GIS_REGION_TYPE[kind] : parseInt(m[1], 10);
+  return { region_type, region_id: parseInt(m[2], 10) };
 }
+
+/** gis `region_type` for each kind of region URL autocomplete returns. */
+const GIS_REGION_TYPE: Record<string, number> = {
+  neighborhood: 1,
+  zipcode: 2,
+  county: 5,
+  city: 6,
+};
 
 /**
  * Parse a canonical Redfin home URL into its constituent parts.
@@ -146,7 +160,7 @@ export async function resolveRegion(
   const places = sections.find((s) => s.name === 'Places');
   const first = places?.rows?.[0];
   if (!first) return null;
-  const parsed = parseRegionId(first.id);
+  const parsed = parseRegionId(first.id, first.url);
   if (!parsed) return null;
   return {
     region_id: parsed.region_id,
@@ -236,7 +250,7 @@ export async function resolveBoth(
   let region: RedfinRegion | null = null;
   const placesRow = sections.find((s) => s.name === 'Places')?.rows?.[0];
   if (placesRow) {
-    const parsed = parseRegionId(placesRow.id);
+    const parsed = parseRegionId(placesRow.id, placesRow.url);
     if (parsed) {
       region = {
         region_id: parsed.region_id,

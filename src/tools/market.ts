@@ -128,7 +128,7 @@ export function registerMarketTools(
           .int()
           .positive()
           .optional()
-          .describe('Redfin region type code (2 = city, 5 = zip code, 6 = neighborhood)'),
+          .describe('Redfin region type code (6 = city, 2 = ZIP code, 1 = neighborhood, 5 = county)'),
         property_type: z
           .number()
           .int()

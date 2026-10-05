@@ -15,6 +15,14 @@ describe('parseRegionId', () => {
       region_id: 30749,
     });
   });
+  it('takes region_type from the row URL when autocomplete mislabels it', () => {
+    expect(parseRegionId('2_17420', '/city/17420/CA/San-Jose')).toEqual({
+      region_type: 6,
+      region_id: 17420,
+    });
+    expect(parseRegionId('9_1', '/zipcode/94545')).toEqual({ region_type: 2, region_id: 1 });
+    expect(parseRegionId('6_30749', '/school/1/x')).toEqual({ region_type: 6, region_id: 30749 });
+  });
   it('returns null for malformed input', () => {
     expect(parseRegionId('not-an-id')).toBeNull();
     expect(parseRegionId(undefined)).toBeNull();
