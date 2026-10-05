@@ -4,6 +4,8 @@ import {
   assertRegionMatches,
   buildGisPath,
   formatHome,
+  hasFilters,
+  matchesFilters,
   registerSearchTools,
   type RawHome,
 } from '../../src/tools/search.js';
@@ -856,4 +858,88 @@ describe('redfin_search_properties tool', () => {
     expect(r.isError).toBeFalsy();
   });
 
+});
+
+describe('client-side filtering (gis ignores filter params)', () => {
+  const home = (id: number, extra: Partial<RawHome>): RawHome => ({
+    propertyId: id,
+    streetLine: { value: `${id} Main St` },
+    city: 'Hayward',
+    state: 'CA',
+    zip: '94544',
+    ...extra,
+  });
+
+  it('matchesFilters drops out-of-range homes but keeps blank fields', () => {
+    const input = { location: 'x', price_max: 900, beds_min: 3, home_types: ['house' as const] };
+    const f = (r: RawHome) => matchesFilters(formatHome(r)!, input);
+    expect(f(home(1, { price: 800, beds: 3, uiPropertyType: 1 }))).toBe(true);
+    expect(f(home(2, { price: 2_550_000, beds: 4, uiPropertyType: 1 }))).toBe(false);
+    expect(f(home(3, { price: 800, beds: 1, uiPropertyType: 1 }))).toBe(false);
+    expect(f(home(4, { price: 800, beds: 3, uiPropertyType: 2 }))).toBe(false);
+    expect(f(home(5, {}))).toBe(true);
+  });
+
+  it('hasFilters is false for a bare location', () => {
+    expect(hasFilters({ location: 'x' })).toBe(false);
+    expect(hasFilters({ location: 'x', beds_min: 2 })).toBe(true);
+  });
+
+  it('masked { level } boxes become undefined, not "[object Object]"', () => {
+    const h = formatHome(
+      home(6, { unitNumber: { level: 1 } as never, hoa: { level: 1 } as never, lotSize: { level: 1 } as never })
+    )!;
+    expect(h.address).toBe('6 Main St, Hayward, CA, 94544');
+    expect(h.unit).toBeUndefined();
+    expect(h.hoa_monthly).toBeUndefined();
+    expect(h.lot_size).toBeUndefined();
+  });
+
+  it('does not repeat a unit the street line already carries', () => {
+    const h = formatHome(
+      home(7, { streetLine: { value: '925 The Alameda #104' }, unitNumber: { value: '#104' } })
+    )!;
+    expect(h.address).toBe('925 The Alameda #104, Hayward, CA, 94544');
+  });
+
+  it('asks gis for the full page and filters the results when filters are set', async () => {
+    mockFetchStingrayJson
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          sections: [
+            { name: 'Places', rows: [{ id: '6_8439', name: 'Hayward', url: '/city/8439/CA/Hayward' }] },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        resultCode: 0,
+        payload: {
+          homes: [
+            home(1, { price: 2_550_000, beds: 4, uiPropertyType: 1 }),
+            home(2, { price: 825_000, beds: 4, uiPropertyType: 1 }),
+            home(3, { price: 799_000, beds: 1, uiPropertyType: 2 }),
+          ],
+        },
+      });
+    const result = await harness.callTool('redfin_search_properties', {
+      location: 'Hayward, CA',
+      price_max: 910_000,
+      beds_min: 3,
+      home_types: ['house'],
+      limit: 3,
+    });
+    const data = parseToolResult(result) as {
+      region: { region_type: number };
+      scanned: number;
+      matched: number;
+      results: { property_id: number }[];
+    };
+    const gisPath = mockFetchStingrayJson.mock.calls[1][0] as string;
+    expect(gisPath).toContain('num_homes=350');
+    expect(gisPath).toContain('region_type=6');
+    expect(data.region.region_type).toBe(6);
+    expect(data.results.map((r) => r.property_id)).toEqual([2]);
+    expect(data).toMatchObject({ scanned: 3, matched: 1 });
+  });
 });

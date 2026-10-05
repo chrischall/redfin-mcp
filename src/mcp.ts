@@ -26,5 +26,10 @@ export function unwrapValue<T>(
   if (typeof x === 'object' && 'value' in (x as object)) {
     return (x as { value?: T }).value;
   }
+  // A box with no `value` (e.g. `{ level: 1 }`) is Redfin masking the
+  // field, not a value: passing it through printed "[object Object]".
+  if (typeof x === 'object' && !Array.isArray(x) && 'level' in (x as object)) {
+    return undefined;
+  }
   return x as T;
 }

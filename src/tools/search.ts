@@ -153,8 +153,10 @@ export function formatHome(raw: RawHome): FormattedHome | null {
       ? raw.url
       : `https://www.redfin.com${raw.url}`
     : `https://www.redfin.com/home/${raw.propertyId}`;
+  const streetWithUnit =
+    street && unit && street.endsWith(unit) ? street : [street, unit].filter(Boolean).join(' ').trim();
   const address = [
-    [street, unit].filter(Boolean).join(' ').trim(),
+    streetWithUnit,
     raw.city,
     raw.state,
     raw.zip,
@@ -195,6 +197,34 @@ export function formatHome(raw: RawHome): FormattedHome | null {
     property_type: raw.uiPropertyType ?? raw.propertyType,
     days_on_redfin: v(raw.dom),
   };
+}
+
+/** True when the caller passed any filter beyond the location. */
+export function hasFilters(input: SearchInput): boolean {
+  return (
+    input.price_min !== undefined ||
+    input.price_max !== undefined ||
+    input.beds_min !== undefined ||
+    input.baths_min !== undefined ||
+    (input.home_types !== undefined && input.home_types.length > 0)
+  );
+}
+
+/**
+ * Re-apply the caller's filters to a formatted home. Redfin's gis API has
+ * been seen ignoring min/max price, beds and uipt entirely (Oct 2026), so
+ * the query params alone can't be trusted. A field Redfin left blank is
+ * not grounds to drop the home.
+ */
+export function matchesFilters(h: FormattedHome, input: SearchInput): boolean {
+  if (input.price_min !== undefined && h.price !== undefined && h.price < input.price_min) return false;
+  if (input.price_max !== undefined && h.price !== undefined && h.price > input.price_max) return false;
+  if (input.beds_min !== undefined && h.beds !== undefined && h.beds < input.beds_min) return false;
+  if (input.baths_min !== undefined && h.baths !== undefined && h.baths < input.baths_min) return false;
+  if (input.home_types && input.home_types.length > 0 && h.property_type !== undefined) {
+    if (!input.home_types.some((t) => HOME_TYPE_UIPT[t] === h.property_type)) return false;
+  }
+  return true;
 }
 
 export interface SearchInput {
@@ -490,7 +520,10 @@ export function registerSearchTools(
             `If you have a full street address, try \`redfin_get_by_address\` instead.`
         );
       }
-      const path = buildGisPath(region, input);
+      // With filters, pull the full page and filter here (see matchesFilters).
+      const filtering = hasFilters(input);
+      const gisLimit = filtering ? REDFIN_GIS_HARD_CAP : effectiveGisLimit(input.limit);
+      const path = buildGisPath(region, { ...input, limit: gisLimit });
       const env = await client.fetchStingrayJson<{
         homes?: RawHome[];
         serviceRegionName?: string;
@@ -510,10 +543,11 @@ export function registerSearchTools(
         input.location
       );
       const limit = effectiveGisLimit(input.limit);
-      const formatted = raw
+      const matching = raw
         .map(formatHome)
         .filter((h): h is FormattedHome => h !== null)
-        .slice(0, limit);
+        .filter((h) => matchesFilters(h, input));
+      const formatted = matching.slice(0, limit);
 
       // #45 silent-cap audit. Redfin's gis API returns at most
       // ~350 homes per call (verified live across high-density metros;
@@ -536,7 +570,9 @@ export function registerSearchTools(
       // 350 server cap (fleet-audit #217: the old `>= 350` check could
       // only fire when the caller asked for 350+).
       const serverCapHit = raw.length >= REDFIN_GIS_HARD_CAP;
-      const resultCapHit = serverCapHit || raw.length >= limit;
+      const resultCapHit = filtering
+        ? serverCapHit || matching.length > limit
+        : serverCapHit || raw.length >= limit;
 
       // #47 coverage. Map (gis returned homes) → 'full'; (gis empty
       // but Redfin clearly has individual profiles) → 'profile_only'
@@ -547,7 +583,7 @@ export function registerSearchTools(
       // implementation runs that lookup once at the top of this
       // handler.
       const coverage: 'full' | 'profile_only' | 'none' =
-        formatted.length > 0
+        raw.length > 0
           ? 'full'
           : address
             ? 'profile_only'
@@ -556,14 +592,21 @@ export function registerSearchTools(
       // Surface a helpful notice when gis legitimately has no listings
       // for a resolved-but-tiny market (e.g. Lake Lure, NC).
       const notice =
-        formatted.length === 0
+        filtering && raw.length > 0 && formatted.length === 0
+          ? `None of the ${raw.length} homes Redfin returned for "${region.name}" match the filters.` +
+            (serverCapHit ? ` Redfin capped the scan at ${REDFIN_GIS_HARD_CAP}, so matches may still exist — try a smaller area.` : '')
+          : raw.length === 0
           ? `Redfin's gis API returned 0 results for region ${region.region_type}_${region.region_id} ("${region.name}"). ` +
             `coverage: ${coverage}. ` +
             (coverage === 'profile_only'
               ? "Redfin has per-property profile pages here but does not index this market in search — use `redfin_get_by_address` for individual properties."
               : "This often means the location is outside Redfin's MLS coverage rather than that there are genuinely no listings. Try a nearby larger city, the county, or compare against redfin.com directly.")
+          : serverCapHit && filtering
+            ? `Redfin returns at most ${REDFIN_GIS_HARD_CAP} homes per area and ignores the filters itself, so only those ${REDFIN_GIS_HARD_CAP} were filtered here (${matching.length} matched). Matching homes outside that set are missing — search smaller areas (ZIP codes or neighborhoods) to cover the rest.`
           : serverCapHit
             ? `Redfin's gis API returned the hard cap (~${REDFIN_GIS_HARD_CAP}) of results — more listings likely exist for this region. Narrow with price/beds filters, or query a smaller sub-region, to enumerate the long tail.`
+            : resultCapHit && filtering
+              ? `${matching.length} of ${raw.length} scanned homes match the filters; returning the first ${limit}. Raise \`limit\` to see the rest.`
             : resultCapHit
               ? `Returned ${raw.length} results — the requested limit of ${limit} — so more listings likely exist for this region. Raise \`limit\` (up to ${REDFIN_GIS_HARD_CAP}), or narrow with price/beds filters, to see the rest.`
               : undefined;
@@ -577,6 +620,7 @@ export function registerSearchTools(
         },
         coverage,
         result_cap_hit: resultCapHit,
+        ...(filtering ? { scanned: raw.length, matched: matching.length } : {}),
         ...(notice ? { notice } : {}),
         results: formatted,
       });
