@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.7](https://github.com/chrischall/redfin-mcp/compare/v1.1.6...v1.1.7) (2026-10-05)
+
+
+### Bug Fixes
+
+* **deps:** require @chrischall/mcp-utils 2.14.0 and MCP SDK 2.3.0 ([#262](https://github.com/chrischall/redfin-mcp/issues/262)) ([b84e622](https://github.com/chrischall/redfin-mcp/commit/b84e622d812f332271b72673cf1644cb11c02e49))
+
 ## [1.1.6](https://github.com/chrischall/redfin-mcp/compare/v1.1.5...v1.1.6) (2026-10-03)
 
 
