@@ -5,9 +5,9 @@
 
 ### Bug Fixes
 
-* **search:** apply filters client-side and drop masked { level } fields ([#268](https://github.com/chrischall/redfin-mcp/issues/268)) ([9fa5ffc](https://github.com/chrischall/redfin-mcp/commit/9fa5ffc4cffc15efaef4f3a65f94260f0e76586b))
-* **search:** take region_type from the autocomplete row URL ([#267](https://github.com/chrischall/redfin-mcp/issues/267)) ([76c5bcb](https://github.com/chrischall/redfin-mcp/commit/76c5bcb4931adbd857922b99461f582051904bf1))
-* **tools:** rental comps payload rename, history cycles, BTF warnings, /home/&lt;id&gt; 404 ([#269](https://github.com/chrischall/redfin-mcp/issues/269)) ([7370640](https://github.com/chrischall/redfin-mcp/commit/737064031c42f12b9b83080e2622043e0ad92217))
+* **search:** apply filters client-side and drop masked { level } fields (thanks @Marius-Juston) ([#268](https://github.com/chrischall/redfin-mcp/issues/268)) ([9fa5ffc](https://github.com/chrischall/redfin-mcp/commit/9fa5ffc4cffc15efaef4f3a65f94260f0e76586b))
+* **search:** take region_type from the autocomplete row URL (thanks @Marius-Juston) ([#267](https://github.com/chrischall/redfin-mcp/issues/267)) ([76c5bcb](https://github.com/chrischall/redfin-mcp/commit/76c5bcb4931adbd857922b99461f582051904bf1))
+* **tools:** rental comps payload rename, history cycles, BTF warnings, /home/&lt;id&gt; 404 (thanks @Marius-Juston) ([#269](https://github.com/chrischall/redfin-mcp/issues/269)) ([7370640](https://github.com/chrischall/redfin-mcp/commit/737064031c42f12b9b83080e2622043e0ad92217))
 
 ## [1.1.7](https://github.com/chrischall/redfin-mcp/compare/v1.1.6...v1.1.7) (2026-10-05)
 
