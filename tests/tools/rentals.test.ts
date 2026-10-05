@@ -134,4 +134,72 @@ describe('redfin_get_comparable_rentals tool', () => {
     expect(parsed.count).toBe(0);
     expect(parsed.rentals).toEqual([]);
   });
+
+  it('reads the renamed `homes` array and names unmapped comp fields', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: { numMatchedHomes: 1, homes: [{ propertyId: 9, streetLine: { value: '1 A St' }, mystery: 1 }] },
+    });
+    const r = await harness.callTool('redfin_get_comparable_rentals', {
+      property_id: 100,
+      latitude: 1,
+      longitude: 1,
+      rent_estimate_low: 1,
+      rent_estimate_high: 2,
+    });
+    const parsed = parseToolResult<{ count: number; note?: string; rentals: Array<{ address?: string }> }>(r);
+    expect(parsed.count).toBe(1);
+    expect(parsed.rentals[0].address).toBe('1 A St');
+    expect(parsed.note).toMatch(/mystery/);
+  });
+
+  it('flattens nested homeData/rentalExtension comps', async () => {
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        homes: [
+          {
+            homeData: {
+              propertyId: '77',
+              url: '/CA/Hayward/apartment/77',
+              addressInfo: {
+                formattedStreetLine: '500 B St',
+                city: 'Hayward',
+                state: 'CA',
+                zip: '94541',
+                centroid: { centroid: { latitude: 37.65, longitude: -122.08 } },
+              },
+            },
+            rentalExtension: {
+              rentPriceRange: { min: 3100, max: 3400 },
+              bedRange: { min: 3, max: 3 },
+              bathRange: { min: 2, max: 2 },
+              sqftRange: { min: 1200, max: 1300 },
+            },
+          },
+        ],
+      },
+    });
+    const r = await harness.callTool('redfin_get_comparable_rentals', {
+      property_id: 100,
+      latitude: 37.64,
+      longitude: -122.08,
+      rent_estimate_low: 2800,
+      rent_estimate_high: 3600,
+    });
+    const parsed = parseToolResult<{ note?: string; rentals: Array<Record<string, unknown>> }>(r);
+    expect(parsed.note).toBeUndefined();
+    expect(parsed.rentals[0]).toMatchObject({
+      property_id: 77,
+      address: '500 B St',
+      zip: '94541',
+      monthly_rent: 3100,
+      rent_range: { min: 3100, max: 3400 },
+      beds: 3,
+      baths: 2,
+      sqft: 1200,
+      url: 'https://www.redfin.com/CA/Hayward/apartment/77',
+    });
+    expect(parsed.rentals[0].distance_miles).toBeCloseTo(0.69, 1);
+  });
 });

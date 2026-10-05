@@ -206,5 +206,17 @@ describe('RedfinClient', () => {
       });
       await expect(client.resolveCanonicalUrl(12345)).rejects.toThrow(/404/);
     });
+    it('explains the 404 without dumping the page HTML', async () => {
+      const client = new RedfinClient({
+        transport: stubTransport(async () => ({
+          status: 404,
+          body: '<!DOCTYPE html><html>…',
+          url: 'https://www.redfin.com/home/12345',
+        })),
+      });
+      const err = await client.resolveCanonicalUrl(12345).catch((e: Error) => e);
+      expect((err as Error).message).toMatch(/listing_id/);
+      expect((err as Error).message).not.toMatch(/DOCTYPE/);
+    });
   });
 });

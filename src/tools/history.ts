@@ -128,12 +128,19 @@ export function normalizeEvents(
       dom: e.daysOnMarket,
       source_mls: e.source,
     };
+    // The same event syndicated by two MLS feeds shows up twice; keep one.
+    const prev = out[out.length - 1];
+    if (prev && prev.date === event.date && prev.type === event.type && prev.price === event.price) {
+      continue;
+    }
     if (typeof e.price === 'number') {
-      if (lastPrice !== null && lastPrice !== 0) {
+      // Only compare within one listing cycle: a new listing measured
+      // against a decades-old sale read as a "+301.5%" price change.
+      if (event.type !== 'Listed' && event.type !== 'Relisted' && lastPrice !== null && lastPrice !== 0) {
         event.price_change_pct =
           Math.round(((e.price - lastPrice) / lastPrice) * 1000) / 10;
       }
-      lastPrice = e.price;
+      lastPrice = event.type === 'Sold' ? null : e.price;
     }
     out.push(event);
   }

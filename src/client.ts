@@ -103,6 +103,16 @@ export class RedfinClient {
   async resolveCanonicalUrl(propertyId: number): Promise<string> {
     const path = `/home/${propertyId}`;
     const result = await this.transport.fetch({ path, method: 'GET' });
+    // Redfin now answers the bare /home/<id> with a 404 page instead of a
+    // redirect (Oct 2026); say so instead of dumping the 404 HTML.
+    if (result.status === 404) {
+      throw new Error(
+        `Redfin property_id ${propertyId} could not be resolved from its id alone — ` +
+          `redfin.com returns 404 for the short /home/${propertyId} URL. Pass the full Redfin ` +
+          `homedetails URL, property_id + listing_id (both appear in redfin_search_properties ` +
+          `results), or look the address up with redfin_get_by_address.`
+      );
+    }
     this.throwIfNotOk(result, 'GET', path);
     this.throwIfSignInPage(result);
     // A successful resolve redirects off the bare /home/<id> form onto the

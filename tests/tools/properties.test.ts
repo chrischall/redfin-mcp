@@ -393,6 +393,7 @@ describe('fetchAndFormatProperty (shared pipeline)', () => {
       listing_id: 55,
     });
     expect(out.btf).toBeNull();
+    expect(out.btfError).toBe('BTF 500');
     expect(out.property?.beds).toBe(1);
     // BTF-derived fields fall back to null cleanly.
     expect(out.property?.last_sold_price).toBeNull();

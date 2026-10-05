@@ -363,3 +363,20 @@ describe('normalizeEvents (#48 cross-MCP shape)', () => {
     expect(out[0].type).toBe('Sold');
   });
 });
+
+describe('normalizeEvents listing cycles', () => {
+  it('does not measure a new listing against an old sale, and drops MLS duplicates', () => {
+    const d = (y: number) => Date.UTC(y, 0, 1);
+    const out = normalizeEvents([
+      { eventDate: d(1990), eventDescription: 'Sold (Public Records)', price: 137000 },
+      { eventDate: d(2026), eventDescription: 'Listed', price: 550000, source: 'A' },
+      { eventDate: d(2026), eventDescription: 'Listed', price: 550000, source: 'B' },
+      { eventDate: d(2026) + 864e5, eventDescription: 'Price Changed', price: 525000 },
+      { eventDate: d(2026) + 2 * 864e5, eventDescription: 'Sold (MLS)', price: 540000 },
+    ]);
+    expect(out.map((e) => e.type)).toEqual(['Sold', 'Listed', 'PriceChange', 'Sold']);
+    expect(out[1].price_change_pct).toBeUndefined();
+    expect(out[2].price_change_pct).toBe(-4.5);
+    expect(out[3].price_change_pct).toBe(2.9);
+  });
+});

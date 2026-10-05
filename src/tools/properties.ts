@@ -464,6 +464,8 @@ export interface FetchAndFormatResult<A extends AboveTheFoldPayload> {
   atf: A | null;
   /** null when `withBelowTheFold: false` (photos) or the BTF fetch failed. */
   btf: BelowTheFoldPayload | null;
+  /** Why the BTF fetch failed, when it did. */
+  btfError?: string;
   canonicalUrl: string;
   /** Formatted record. Undefined only when `withBelowTheFold: false`
    * (photos doesn't format a property). */
@@ -506,6 +508,7 @@ export async function fetchAndFormatProperty<
     listingId: String(ids.listingId),
   });
   const atfPath = `/stingray/api/home/details/aboveTheFold?${params.toString()}`;
+  let btfError: string | undefined;
   const [atfEnv, btf] = await Promise.all([
     client.fetchStingrayJson<A>(atfPath),
     withBtf
@@ -514,7 +517,10 @@ export async function fetchAndFormatProperty<
             `/stingray/api/home/details/belowTheFold?${params.toString()}`
           )
           .then((e) => (e ? e.payload ?? null : null))
-          .catch(() => null)
+          .catch((e: unknown) => {
+            btfError = (e instanceof Error ? e.message : String(e)).slice(0, 200);
+            return null;
+          })
       : Promise.resolve(null),
   ]);
   const atf = atfEnv.payload ?? null;
@@ -525,7 +531,13 @@ export async function fetchAndFormatProperty<
     ? ids.canonicalUrl
     : buildCanonicalUrl(atf?.addressSectionInfo, ids.propertyId) ??
       ids.canonicalUrl;
-  const result: FetchAndFormatResult<A> = { ids, atf, btf, canonicalUrl };
+  const result: FetchAndFormatResult<A> = {
+    ids,
+    atf,
+    btf,
+    ...(btfError ? { btfError } : {}),
+    canonicalUrl,
+  };
   if (withBtf) {
     const initial = ids.initial ?? {
       propertyId: ids.propertyId,
@@ -606,7 +618,7 @@ export function registerPropertyTools(
       // BTF gives us the cheap derived fields (#50 last_sold_*, #36
       // tax_annual cleanup) without a second tool call. resolveIds also
       // enforces the URL-shape validation (Bug 4) for this entry point.
-      const { btf, property } = await fetchAndFormatProperty(
+      const { btf, btfError, property } = await fetchAndFormatProperty(
         client,
         { url, property_id, listing_id },
         { includeDescription: include_description === true }
@@ -627,8 +639,21 @@ export function registerPropertyTools(
         tax_history = btf.publicRecordsInfo.allTaxInfo.map(formatTaxEvent);
       }
 
+      // Without BTF, last_sold_*, tax_annual and the histories are blank
+      // because Redfin didn't send them, not because they don't exist.
+      // (Seen on "Coming Soon" listings.) Say so rather than return nulls.
+      const warnings: string[] = [];
+      if (!btf || !btf.propertyHistoryInfo?.events?.length) {
+        warnings.push(
+          'Redfin returned no price/sale history for this listing' +
+            (btfError ? ` (${btfError})` : '') +
+            ', so last_sold_*, tax_annual, price_history and tax_history are missing, not zero. ' +
+            'Try redfin_get_price_history, or Zillow, for this address.'
+        );
+      }
       return viewResponse(view, {
         ...property,
+        ...(warnings.length ? { warnings } : {}),
         ...(price_history ? { price_history } : {}),
         ...(events_normalized ? { events_normalized } : {}),
         ...(tax_history ? { tax_history } : {}),
