@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/chrischall/redfin-mcp/compare/v1.2.0...v1.2.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **deps:** bump source-map-js from 1.2.1 to 1.2.2 in the security group across 1 directory ([#275](https://github.com/chrischall/redfin-mcp/issues/275)) ([870bf2d](https://github.com/chrischall/redfin-mcp/commit/870bf2dd7c10fd975477a599c46277878f2d3c85))
+
 ## [1.2.0](https://github.com/chrischall/redfin-mcp/compare/v1.1.8...v1.2.0) (2026-10-06)
 
 
