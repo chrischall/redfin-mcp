@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/chrischall/redfin-mcp/compare/v1.1.8...v1.2.0) (2026-10-06)
+
+
+### Features
+
+* **search:** exhaustive area sweeps and drawn-map bounds search ([#272](https://github.com/chrischall/redfin-mcp/issues/272)) ([e4e6b2d](https://github.com/chrischall/redfin-mcp/commit/e4e6b2ded32b8b1883d4e7df3473c424c91f8865))
+
 ## [1.1.8](https://github.com/chrischall/redfin-mcp/compare/v1.1.7...v1.1.8) (2026-10-05)
 
 
