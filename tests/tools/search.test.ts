@@ -251,6 +251,43 @@ describe('redfin_search_properties tool', () => {
     );
   });
 
+  describe('bounds (drawn-map) search', () => {
+    const box = { north: 37.4, south: 37.2, east: -121.8, west: -122.0 };
+    const inBox = (id: number, price: number, lat = 37.3, lng = -121.9): RawHome => ({
+      propertyId: id, price, beds: 3, baths: 2, city: 'San Jose', state: 'CA', zip: '95133',
+      latLong: { value: { latitude: lat, longitude: lng } },
+    });
+    const noPlaces = { resultCode: 0, payload: { sections: [] } };
+
+    it('searches the polygon instead of the region and filters locally', async () => {
+      mockFetchStingrayJson
+        .mockResolvedValueOnce(noPlaces) // autocomplete for the label
+        .mockResolvedValueOnce({ resultCode: 0, payload: { homes: [inBox(1, 700_000), inBox(2, 1_500_000)] } });
+      const r = await harness.callTool('redfin_search_properties', { location: 'Berryessa', bounds: box, price_max: 900_000 });
+      expect(r.isError).toBeFalsy();
+      const gisPath = mockFetchStingrayJson.mock.calls[1][0] as string;
+      const qs = new URLSearchParams(gisPath.split('?')[1]);
+      expect(qs.get('user_poly')).toContain('-122.000000 37.200000');
+      expect(qs.has('region_id')).toBe(false);
+      const parsed = parseToolResult<{ resolved_as: string; poly_variant: string; scanned: number; matched: number; results: Array<{ property_id: number }> }>(r);
+      expect(parsed).toMatchObject({ resolved_as: 'bounds', poly_variant: 'user_poly', scanned: 2, matched: 1 });
+      expect(parsed.results.map((h) => h.property_id)).toEqual([1]);
+      expect(parsed).not.toHaveProperty('drift_warning');
+    });
+
+    it('warns when every polygon request shape drifts outside the box', async () => {
+      const elsewhere = Array.from({ length: 10 }, (_, i) => inBox(i + 1, 700_000, 40.7, -74.0));
+      mockFetchStingrayJson.mockResolvedValueOnce(noPlaces).mockResolvedValue({ resultCode: 0, payload: { homes: elsewhere } });
+      const r = await harness.callTool('redfin_search_properties', { location: 'Berryessa', bounds: box });
+      const parsed = parseToolResult<{ poly_variant: string | null; drift_warning?: string; outside_bounds: number; poly_probe?: unknown[] }>(r);
+      expect(parsed.poly_variant).toBeNull();
+      expect(parsed.drift_warning).toMatch(/ignoring the polygon/);
+      expect(parsed.outside_bounds).toBe(10);
+      expect(parsed.poly_probe).toHaveLength(4);
+      mockFetchStingrayJson.mockReset();
+    });
+  });
+
   it('resolves location via autocomplete then queries gis', async () => {
     // First call: autocomplete. Second call: gis.
     mockFetchStingrayJson

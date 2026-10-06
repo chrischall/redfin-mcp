@@ -12,6 +12,7 @@ This is a "Pattern A" fetchproxy MCP (every call rides through fetchproxy), not 
 
 | Tool | File | Endpoint(s) | Kind |
 | --- | --- | --- | --- |
+| `redfin_sweep_area` | `tools/search.ts` | Map mode (`bounds`): `GET /stingray/api/gis?user_poly=…` per tile — the first tile probes `POLY_VARIANTS` (`user_poly` first) and locks the first area-limited shape — quartering any tile that returns the 350-home cap<br>ZIP mode (`zips`): per ZIP, `location-autocomplete` → `GET /stingray/api/gis?region_id=…&region_type=2&…`, verified by the homes' own ZIPs | read (optional local file write — `readOnlyHint: false`) |
 | `redfin_search_properties` | `tools/search.ts` | (a) `GET /stingray/do/location-autocomplete?location=…` → region OR address<br>(b) `GET /stingray/api/gis?region_id=…&region_type=…&…` (region path) — address path short-circuits to a 1-result reply | read |
 | `redfin_get_by_address` | `tools/get-by-address.ts` | `GET /stingray/do/location-autocomplete?location=…` → first `Addresses` row → parse `/home/<id>` | read |
 | `redfin_get_property` | `tools/properties.ts` | (a) `GET /stingray/api/home/details/initialInfo?path=…` → propertyId+listingId<br>(b) `GET /stingray/api/home/details/aboveTheFold?propertyId=…&listingId=…` | read |
@@ -68,7 +69,8 @@ src/
   view.ts               # the `view` rung vocabulary (compact | full) — viewArg()
                         #   for the schema, viewResponse() for the return
   tools/                # one registerXxxTools(server, client) per file (16):
-    search.ts           # redfin_search_properties (buildGisPath + formatHome)
+    search.ts           # redfin_search_properties (buildGisPath + formatHome),
+                        #   buildGisPolyPath (drawn-map polygon), redfin_sweep_area
     properties.ts       # redfin_get_property (initialInfo + ATF/BTF)
     get-by-address.ts   # redfin_get_by_address (single-address resolve)
     bulk-get.ts         # redfin_bulk_get (concurrent ATF/BTF fan-out)
@@ -129,7 +131,7 @@ REDFIN_COMMUNITIES_FILE=/path/to/communities.json  # override community vocabula
 - Tool return shape: `minifiedResult(data)` from `src/mcp.ts` (a re-export of `@chrischall/mcp-utils`) → `{ content: [{ type: 'text', text: JSON.stringify(data) }] }`. Minified, not pretty-printed: the indentation was ~20% of a large response and nothing downstream reads it. Whitespace INSIDE a value is untouched — a marketing description keeps its paragraph breaks. Don't hand-roll the wrapper.
 - Read tools return through `viewResponse(view, data)` from `src/view.ts` instead, and take `view: viewArg()` in their `inputSchema`. Rungs are `compact` (the default) and `full`; there is no `raw` because these records are ASSEMBLED from several endpoints rather than passed through from one. `compact` is subtractive only — it strips image/avatar URLs and nothing else, because this repo holds no verified record of which Redfin fields matter and an invented field list would hand back records with holes in them. See the docblock in `src/view.ts` for the `keep`/`drop` calls: `image_url` + `thumbnail_url` are KEPT (`formatHomeCard` constructs them from `mlsId` + `dataSourceId`), `primary_photo_url` is DROPPED (`format()` reads it verbatim off Redfin's payload).
 - **Never give `view` to a tool whose product IS the image.** `redfin_get_property_photos` returns `photoUrls` bundles as its entire payload; stripping there doesn't shrink the response, it empties it. It uses `minifiedResult` directly and must keep doing so.
-- Tool annotations: every tool sets `title`, `readOnlyHint: true`, `idempotentHint: true`, and `openWorldHint`. The last is `true` for network-bound tools and `false` for `redfin_calculate_mortgage` (pure local computation).
+- Tool annotations: every tool sets `title`, `readOnlyHint: true`, `idempotentHint: true`, and `openWorldHint`. The last is `true` for network-bound tools and `false` for `redfin_calculate_mortgage` (pure local computation). **Exception:** `redfin_sweep_area` sets `readOnlyHint: false` because its optional `output_path` writes a local file (never to Redfin); it refuses relative paths and existing files.
 - Path-only inputs to `RedfinClient`: pass `/some/path?with=query`, never a full URL. `FetchproxyTransport` prepends `https://www.redfin.com`. When a tool takes a `url` arg from the user, reduce it via `urlToPath` from `src/url.ts`.
 - Always use `client.fetchStingrayJson(...)` for `/stingray/...` endpoints. Stingray responses carry a `{}&&` anti-CSRF prefix that has to be stripped, AND a `{resultCode, errorMessage, payload}` envelope that needs to be checked. The helper handles both.
 - Write a failing test before implementation (TDD).

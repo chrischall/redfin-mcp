@@ -12,7 +12,8 @@ Redfin real-estate access as an MCP server for Claude — search listings, fetch
 
 | Tool | Purpose | Auth-scoped |
 | --- | --- | :---: |
-| `redfin_search_properties` | Search listings by location, price band, beds/baths, home type. Resolves free-text via Redfin's autocomplete then queries the `gis` API. | |
+| `redfin_search_properties` | Search listings by location, price band, beds/baths, home type. Resolves free-text via Redfin's autocomplete then queries the `gis` API. Optional `bounds` searches a drawn-map box instead. | |
+| `redfin_sweep_area` | Exhaustive enumeration of a lat/lng box: recursive polygon tiling until no tile hits the 350-home `gis` cap, deduped and filtered locally, with a completeness summary and drift warnings. `zips` mode sweeps a list of ZIP regions instead (for areas where Redfin ignores drawn-map polygons). Listings come back inline; the optional `output_path` writes them to a new JSON file instead (absolute path, never overwrites) | |
 | `redfin_get_property` | Full record for a property by URL, `property_id` alone, or `property_id`+`listing_id`. Address, beds/baths, sqft, year built, price, status, days on market, primary photo. | |
 | `redfin_get_property_photos` | Full photo gallery for a property — every CDN image at fullscreen/large/medium sizes plus thumbnails and captions. | |
 | `redfin_get_market_report` | Median sale/list prices, ZHVI YoY, average days on market, inventory for a region. | |

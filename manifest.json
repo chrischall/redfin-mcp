@@ -57,6 +57,10 @@
     {
       "name": "redfin_calculate_mortgage",
       "description": "Local PITI mortgage-payment calculator — no network"
+    },
+    {
+      "name": "redfin_sweep_area",
+      "description": "Exhaustively enumerate Redfin for-sale listings in a lat/lng box by recursive polygon tiling under the 350-home cap, or across a list of ZIP regions (`zips` mode); reports completeness and returns the listings inline, or writes them to an optional new JSON file (`output_path`)."
     }
   ]
 }

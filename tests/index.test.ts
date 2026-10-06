@@ -17,6 +17,7 @@ const mockClient = {
 
 const EXPECTED_TOOLS = [
   'redfin_search_properties',
+  'redfin_sweep_area',
   'redfin_get_property',
   'redfin_get_saved_searches',
   'redfin_get_saved_homes',
