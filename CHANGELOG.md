@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/chrischall/redfin-mcp/compare/v1.2.1...v1.2.2) (2026-10-07)
+
+
+### Bug Fixes
+
+* **deps:** opt out of confirmation prompts for clients that never show them, and pick up fetchproxy relay fixes ([#277](https://github.com/chrischall/redfin-mcp/issues/277)) ([7768c48](https://github.com/chrischall/redfin-mcp/commit/7768c48599e7e29746c8d19145da7084300842b8))
+
 ## [1.2.1](https://github.com/chrischall/redfin-mcp/compare/v1.2.0...v1.2.1) (2026-10-06)
 
 
