@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.3](https://github.com/chrischall/redfin-mcp/compare/v1.2.2...v1.2.3) (2026-10-09)
+
+
+### Bug Fixes
+
+* annotate tools truthfully and sync manifests with the served tools ([#283](https://github.com/chrischall/redfin-mcp/issues/283)) ([3c4523f](https://github.com/chrischall/redfin-mcp/commit/3c4523f82db40aa69bc441f98630ec48f9241458))
+* declare the plugin MCP config under the mcpServers key Claude Code reads ([#284](https://github.com/chrischall/redfin-mcp/issues/284)) ([1e26fc1](https://github.com/chrischall/redfin-mcp/commit/1e26fc195a8f07b236366a31014e7f41e5364dd3))
+* **deps:** update @chrischall/mcp-utils to 3.0.0 ([#282](https://github.com/chrischall/redfin-mcp/issues/282)) ([6ce4bea](https://github.com/chrischall/redfin-mcp/commit/6ce4bea3d725d4eaf9c62104bcf90e82ae13b63f))
+* resolve low-severity audit findings ([#279](https://github.com/chrischall/redfin-mcp/issues/279)) ([3145895](https://github.com/chrischall/redfin-mcp/commit/314589538476c0a61cdf469fe67dec85a81569cf))
+
 ## [1.2.2](https://github.com/chrischall/redfin-mcp/compare/v1.2.1...v1.2.2) (2026-10-07)
 
 
