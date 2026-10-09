@@ -9,6 +9,7 @@ import type { RedfinClient } from '../client.js';
 import { minifiedResult } from '../mcp.js';
 import { urlToPath } from '../url.js';
 import { DeadlineAbandonedError, throwIfAborted } from '../deadline.js';
+import { InvalidPropertyUrlError } from './properties.js';
 
 /**
  * Redfin's homedetails page server-renders climate risk data from
@@ -282,7 +283,8 @@ const CLIMATE_TOOL_DESCRIPTION =
   "the risk blocks; when not, `{ available: false, reason }` where reason is one of " +
   "`no_first_street_data`, `new_construction`, `address_outside_coverage`. " +
   "Sourced from Redfin's server-rendered homedetails HTML (no clean stingray " +
-  "endpoint exists). Pass a homedetails URL (full or path). When a `cluster_id` " +
+  "endpoint exists). Pass a homedetails URL (full or path) — it must end in a " +
+  "`/home/<propertyId>` segment; any other page is rejected without being fetched. When a `cluster_id` " +
   "is surfaced, properties with the same value typically share identical climate " +
   "scores — use that to group N properties and skip redundant fetches.";
 
@@ -322,6 +324,28 @@ function normalizeClimateUrl(url: string): string {
   }
 }
 
+/**
+ * Reduce a caller URL to a fetchable homedetails path, or throw.
+ *
+ * The climate tools GET the page through the user's signed-in tab, so an
+ * unchecked URL would let a (prompt-injected) caller point that session at
+ * any www.redfin.com page — `/myredfin/*` account pages included — and get
+ * an error-body excerpt back (fleet-audit #676). Only a path whose
+ * PATHNAME ends in `/home/<propertyId>` is fetched; a `/home/<id>` hidden
+ * in a query string or fragment does not count.
+ */
+export function climatePathOrThrow(url: string): string {
+  const path = urlToPath(url);
+  const pathname = path.split(/[?#]/)[0];
+  if (!/\/home\/\d+\/?$/.test(pathname)) {
+    throw new InvalidPropertyUrlError(
+      url,
+      "is not a homedetails page — it must end in a `/home/<propertyId>` segment"
+    );
+  }
+  return path;
+}
+
 async function fetchOneClimate(
   client: RedfinClient,
   url: string,
@@ -329,7 +353,7 @@ async function fetchOneClimate(
 ): Promise<PerPropertyClimateResult> {
   const normalizedUrl = normalizeClimateUrl(url);
   try {
-    const path = urlToPath(url);
+    const path = climatePathOrThrow(url);
     // The bulk tool retries a one-shot bridge timeout (the stale-tab tax)
     // once per row; its overall deadline bounds the extra wait. The
     // deadline `signal` (#956) is checked before each attempt so a row

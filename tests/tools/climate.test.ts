@@ -175,7 +175,7 @@ describe('redfin_get_climate_risk tool', () => {
   it('returns {available: false, reason} when the page has no climate data (#51)', async () => {
     mockFetchHtml.mockResolvedValueOnce('<html>no climate data here</html>');
     const r = await harness.callTool('redfin_get_climate_risk', {
-      url: '/x',
+      url: '/x/home/9',
     });
     const parsed = parseToolResult<{
       available: boolean;
@@ -200,7 +200,7 @@ describe('redfin_get_climate_risk tool', () => {
     mockFetchHtml.mockResolvedValueOnce(
       'a "floodData":{"fsid":1,"floodFactor":2} b "fireData":{"fsid":1,"fireFactor":3}'
     );
-    const r = await harness.callTool('redfin_get_climate_risk', { url: '/x' });
+    const r = await harness.callTool('redfin_get_climate_risk', { url: '/x/home/9' });
     const parsed = parseToolResult<{ available: boolean; not_covered: string[] }>(
       r
     );
@@ -212,9 +212,57 @@ describe('redfin_get_climate_risk tool', () => {
     mockFetchHtml.mockResolvedValueOnce(
       'a "censusTract":"371110304002" b "fireData":{"fsid":1,"fireFactor":3}'
     );
-    const r = await harness.callTool('redfin_get_climate_risk', { url: '/x' });
+    const r = await harness.callTool('redfin_get_climate_risk', { url: '/x/home/9' });
     const parsed = parseToolResult<{ cluster_id?: string }>(r);
     expect(parsed.cluster_id).toBe('371110304002');
+  });
+});
+
+describe('climate tools only fetch homedetails pages (fleet-audit #676)', () => {
+  let guardHarness: Awaited<ReturnType<typeof createTestHarness>>;
+  afterAll(async () => {
+    if (guardHarness) await guardHarness.close();
+  });
+
+  it('setup', async () => {
+    guardHarness = await createTestHarness((server) =>
+      registerClimateTools(server, mockClient)
+    );
+  });
+
+  it.each([
+    '/myredfin/favorites',
+    'https://www.redfin.com/myredfin/settings',
+    '/myredfin/favorites?next=/home/123',
+    '/stingray/do/api/v3/favorites/homecards#/home/1',
+  ])('rejects %s without fetching it through the session', async (url) => {
+    const r = await guardHarness.callTool('redfin_get_climate_risk', { url });
+    expect(r.isError).toBe(true);
+    expect(JSON.stringify(r.content)).toMatch(/\/home\/<propertyId>/);
+    expect(mockFetchHtml).not.toHaveBeenCalled();
+  });
+
+  it('bulk: a non-homedetails URL is a per-row error and is never fetched', async () => {
+    mockFetchHtml.mockResolvedValue('"fireData":{"fsid":1,"fireFactor":5}');
+    const r = await guardHarness.callTool('redfin_get_climate_risk_bulk', {
+      urls: ['/NY/X/foo/home/1', '/myredfin/favorites'],
+    });
+    const parsed = parseToolResult<{
+      errored: number;
+      results: Array<{ url: string; error?: string }>;
+    }>(r);
+    expect(parsed.errored).toBe(1);
+    expect(parsed.results[1].error).toMatch(/\/home\/<propertyId>/);
+    expect(mockFetchHtml).toHaveBeenCalledTimes(1);
+    expect(mockFetchHtml.mock.calls[0][0]).toBe('/NY/X/foo/home/1');
+  });
+
+  it('baseline: a non-homedetails sample is never fetched', async () => {
+    mockFetchHtml.mockResolvedValue('"fireData":{"fsid":1,"fireFactor":5}');
+    await guardHarness.callTool('redfin_get_area_climate_baseline', {
+      sample_urls: ['/NY/X/foo/home/1', '/myredfin/favorites'],
+    });
+    expect(mockFetchHtml).toHaveBeenCalledTimes(1);
   });
 });
 
