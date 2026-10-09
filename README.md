@@ -18,15 +18,20 @@ Redfin real-estate access as an MCP server for Claude — search listings, fetch
 | `redfin_get_property_photos` | Full photo gallery for a property — every CDN image at fullscreen/large/medium sizes plus thumbnails and captions. | |
 | `redfin_get_market_report` | Median sale/list prices, ZHVI YoY, average days on market, inventory for a region. | |
 | `redfin_get_price_history` | Listing-history and tax-roll events for a property — Listed/Sold/Pending entries plus annual assessed values and taxes paid. | |
-| `redfin_compare_properties` | Side-by-side comparison of up to 12 properties: address, price, beds/baths, sqft, $/sqft, year built, status, days on market. Aligned summary table. | |
+| `redfin_compare_properties` | Side-by-side comparison of 2–25 properties: address, price, beds/baths, sqft, $/sqft, year built, status, days on market. Optional aligned summary table. | |
+| `redfin_bulk_get` | Structured fetch of up to 200 properties in one call — per-row errors, retry-once-on-timeout, and an overall deadline (unsettled rows come back `pending`). | |
 | `redfin_get_climate_risk` | First Street Foundation flood / fire / heat risk factors for a property — FEMA zones, 30-year flood-chance series, insurance bands, cumulative-heat projections. | |
+| `redfin_get_climate_risk_bulk` | Climate risk for up to 100 properties in one call, input order preserved, with a `cluster_summary` of properties that share scores. | |
+| `redfin_get_area_climate_baseline` | Averaged climate-risk baseline from 2–10 sample properties in an area, plus the shared `cluster_id` when they agree. | |
 | `redfin_get_comparable_rentals` | Comparable rentals near a property — monthly rent, beds/baths, sqft, distance. Used for rent estimation. | |
 | `redfin_calculate_affordability` | Local affordability calculator — back-of-envelope max purchase price from income + DTI + rates (no network). | |
 | `redfin_get_saved_homes` | Your favorited homes — flattened across all collections, with primary photo URLs constructed from each home's CDN handles. | ✓ |
 | `redfin_get_saved_searches` | Your saved searches with region URLs and display text. | ✓ |
 | `redfin_calculate_mortgage` | Local PITI calculator — principal+interest, taxes, insurance, HOA, PMI (no network). | |
-| `redfin_get_by_address` | Resolve a free-text address to its Redfin canonical URL + home_id. Degrades to `resolved: false` when no listing matches. One autocomplete round-trip. | |
+| `redfin_get_by_address` | Resolve a free-text address to its Redfin canonical URL + home_id. Degrades to `resolved: false` when no listing matches. Autocomplete, then suffix variants, then a bounded search fallback. | |
+| `redfin_resolve_addresses` | Batch-resolve up to 100 addresses to Redfin URLs + home_ids, one row per input. | |
 | `redfin_healthcheck` | End-to-end bridge check — round-trips `/robots.txt` and reports which hop failed (bridge down vs. extension not linked / pair code pending vs. Redfin-side issue), plus the extension link state (`bridge.session_state`, `pending_pair_code`, `extension_connected`). Call when other tools time out. | |
+| `redfin_register_session` / `redfin_set_active_session` / `redfin_get_session_context` | Shared session registry — record which Redfin account the bridged tab is signed into, switch between registered sessions, and show the active one (local; no network). | |
 
 ## Acknowledgement of Terms
 

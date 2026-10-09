@@ -61,6 +61,66 @@
     {
       "name": "redfin_sweep_area",
       "description": "Exhaustively enumerate Redfin for-sale listings in a lat/lng box by recursive polygon tiling under the 350-home cap, or across a list of ZIP regions (`zips` mode); reports completeness and returns the listings inline, or writes them to an optional new JSON file (`output_path`)."
+    },
+    {
+      "name": "redfin_get_by_address",
+      "description": "Resolve a free-text address to its Redfin canonical URL and home_id"
+    },
+    {
+      "name": "redfin_resolve_addresses",
+      "description": "Batch-resolve up to 100 addresses to Redfin URLs and home_ids"
+    },
+    {
+      "name": "redfin_get_property_photos",
+      "description": "Full photo gallery for a Redfin property"
+    },
+    {
+      "name": "redfin_get_price_history",
+      "description": "Listing-price events and tax history for a property"
+    },
+    {
+      "name": "redfin_compare_properties",
+      "description": "Fetch and compare 2–25 Redfin properties side-by-side"
+    },
+    {
+      "name": "redfin_bulk_get",
+      "description": "Structured fetch of up to 200 Redfin properties in one call, with per-row errors"
+    },
+    {
+      "name": "redfin_get_climate_risk",
+      "description": "First Street flood, fire and heat risk scores for a property"
+    },
+    {
+      "name": "redfin_get_climate_risk_bulk",
+      "description": "Climate risk for up to 100 properties in one call"
+    },
+    {
+      "name": "redfin_get_area_climate_baseline",
+      "description": "Averaged climate-risk baseline from 2–10 sample properties in an area"
+    },
+    {
+      "name": "redfin_get_comparable_rentals",
+      "description": "Nearby rental comparables for a property"
+    },
+    {
+      "name": "redfin_calculate_affordability",
+      "description": "Local home-affordability calculator — no network"
+    },
+    {
+      "name": "redfin_healthcheck",
+      "description": "Check the browser bridge and a redfin.com round-trip"
+    },
+    {
+      "name": "redfin_register_session",
+      "description": "Register the signed-in Redfin account as a session"
+    },
+    {
+      "name": "redfin_set_active_session",
+      "description": "Switch the active Redfin session"
+    },
+    {
+      "name": "redfin_get_session_context",
+      "description": "Show the registered Redfin sessions and which is active"
     }
   ]
 }
