@@ -21,6 +21,30 @@
           "description": "Override the fetchproxy WebSocket port (default 37149).",
           "isRequired": false,
           "format": "string"
+        },
+        {
+          "name": "REDFIN_COMMUNITIES_FILE",
+          "description": "Path to a JSON file that overrides the community vocabulary (JSON string array).",
+          "isRequired": false,
+          "format": "filepath"
+        },
+        {
+          "name": "REDFIN_DEBUG",
+          "description": "Set to 1 for verbose fetchproxy transport logging to stderr.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "FETCHPROXY_WS_HOST",
+          "description": "Bind interface for the fetchproxy concentrator, a literal IP only (default 127.0.0.1). Keep on loopback; it exists for hosted deployments that run each MCP in its own network namespace.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "FETCHPROXY_IDENTITY_DIR",
+          "description": "Absolute path where the fetchproxy long-term identity keypair is stored (default ~/.fetchproxy/identity/).",
+          "isRequired": false,
+          "format": "string"
         }
       ]
     }

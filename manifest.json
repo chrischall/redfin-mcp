@@ -30,7 +30,46 @@
       "command": "node",
       "args": [
         "${__dirname}/dist/bundle.js"
-      ]
+      ],
+      "env": {
+        "REDFIN_WS_PORT": "${user_config.redfin_ws_port}",
+        "REDFIN_COMMUNITIES_FILE": "${user_config.redfin_communities_file}",
+        "REDFIN_DEBUG": "${user_config.redfin_debug}",
+        "FETCHPROXY_WS_HOST": "${user_config.fetchproxy_ws_host}",
+        "FETCHPROXY_IDENTITY_DIR": "${user_config.fetchproxy_identity_dir}"
+      }
+    }
+  },
+  "user_config": {
+    "redfin_ws_port": {
+      "type": "string",
+      "title": "fetchproxy WebSocket port",
+      "description": "Override the fetchproxy WebSocket port (default 37149).",
+      "required": false
+    },
+    "redfin_communities_file": {
+      "type": "file",
+      "title": "Communities file",
+      "description": "Override the community vocabulary (JSON string array).",
+      "required": false
+    },
+    "redfin_debug": {
+      "type": "string",
+      "title": "Debug logging (advanced)",
+      "description": "Set to 1 for verbose fetchproxy transport logging to stderr.",
+      "required": false
+    },
+    "fetchproxy_ws_host": {
+      "type": "string",
+      "title": "fetchproxy bind address (advanced)",
+      "description": "Bind interface for the fetchproxy concentrator, a literal IP only (default 127.0.0.1). Keep on loopback; it exists for hosted deployments that run each MCP in its own network namespace.",
+      "required": false
+    },
+    "fetchproxy_identity_dir": {
+      "type": "string",
+      "title": "fetchproxy identity directory (advanced)",
+      "description": "Absolute path where the fetchproxy long-term identity keypair is stored (default ~/.fetchproxy/identity/).",
+      "required": false
     }
   },
   "tools": [
@@ -112,15 +151,15 @@
     },
     {
       "name": "redfin_register_session",
-      "description": "Register the signed-in Redfin account as a session"
+      "description": "Record (or refresh) which Redfin account the signed-in session belongs to"
     },
     {
       "name": "redfin_set_active_session",
-      "description": "Switch the active Redfin session"
+      "description": "Mark a registered session_id as the current account label (label only)"
     },
     {
       "name": "redfin_get_session_context",
-      "description": "Show the registered Redfin sessions and which is active"
+      "description": "List every registered account label plus the current active_session_id"
     }
   ]
 }
