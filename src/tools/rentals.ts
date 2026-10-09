@@ -7,9 +7,10 @@ import { minifiedResult, unwrapValue as unwrap } from '../mcp.js';
  * Redfin's web app calls `/stingray/api/home/comparable-rentals` from
  * the property page to surface "what could this rent for" data. The
  * inputs are: rentEstimateLow, rentEstimateHigh, latitude, longitude,
- * propertyId. The first three come from the property's own rent
- * estimate; this tool requires the caller to pass them since they're
- * not readily derived without a prior `redfin_get_property` call.
+ * propertyId. The rent estimate bounds come from the property's own rent
+ * estimate, which `redfin_get_property` does NOT surface (no verified
+ * fixture of Redfin's rental-estimate payload yet), so the caller must
+ * supply them; lat/lng and propertyId do come from `redfin_get_property`.
  *
  * Verified live 2026-05-23.
  */
@@ -169,7 +170,7 @@ export function registerRentalsTools(
     {
       title: 'Get comparable rentals near a Redfin property',
       description:
-        "Find nearby rental comparables for a given property: nearby active rental listings with similar bed/bath/sqft, including monthly rent, distance, and the Redfin URL. Useful for estimating what a property could rent for, or for finding rentals near a home you're considering. Inputs are the rent estimate range + lat/lng + propertyId — typically taken from the upstream `redfin_get_property` (or read from the property page directly).",
+        "Find nearby rental comparables for a given property: nearby active rental listings with similar bed/bath/sqft, including monthly rent, distance, and the Redfin URL. Useful for estimating what a property could rent for, or for finding rentals near a home you're considering. Inputs are the rent estimate range + lat/lng + propertyId. `redfin_get_property` supplies property_id, latitude and longitude, but it does not return a rent estimate — take the range from the Redfin property page's rental estimate or another source (e.g. a Zillow rent Zestimate), or pass a deliberately wide range around a known rent. The range is sent to Redfin as a filter, so a wrong or invented range narrows the comps; low must not exceed high.",
       annotations: {
         title: 'Get comparable rentals near a Redfin property',
         readOnlyHint: true,
@@ -178,8 +179,8 @@ export function registerRentalsTools(
       },
       inputSchema: z.object({
         property_id: z.number().int().positive(),
-        latitude: z.number(),
-        longitude: z.number(),
+        latitude: z.number().min(-90).max(90).describe('Property latitude (from redfin_get_property).'),
+        longitude: z.number().min(-180).max(180).describe('Property longitude (from redfin_get_property).'),
         rent_estimate_low: z
           .number()
           .int()
@@ -201,6 +202,13 @@ export function registerRentalsTools(
       rent_estimate_low,
       rent_estimate_high,
     }) => {
+      // Sent to Redfin as filter params, so a reversed range would quietly
+      // return nothing useful (fleet-audit #672).
+      if (rent_estimate_low > rent_estimate_high) {
+        throw new Error(
+          `rent_estimate_low (${rent_estimate_low}) must not exceed rent_estimate_high (${rent_estimate_high}).`
+        );
+      }
       const params = new URLSearchParams({
         rentEstimateLow: String(rent_estimate_low),
         rentEstimateHigh: String(rent_estimate_high),

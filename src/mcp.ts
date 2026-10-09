@@ -7,8 +7,8 @@
  * Every `redfin_*` tool returns exactly one text block; this removes
  * boilerplate at the bottom of each handler.
  *
- * Re-exported from `@chrischall/mcp-utils` (the fleet-shared, byte-identical
- * `JSON.stringify(data, null, 2)` text wrapper) so every tool keeps importing
+ * Re-exported from `@chrischall/mcp-utils` (the fleet-shared, minified
+ * `JSON.stringify(data)` text wrapper — no indentation) so every tool keeps importing
  * `minifiedResult` from `../mcp.js` while the implementation lives upstream.
  */
 export { minifiedResult } from '@chrischall/mcp-utils';

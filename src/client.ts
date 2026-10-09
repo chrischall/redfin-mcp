@@ -153,6 +153,14 @@ export class RedfinClient {
       );
     }
     if (parsed.resultCode !== 0) {
+      // A stingray envelope rejecting the call for a missing/expired
+      // session is the THIRD sign-in signal (the other two live in
+      // throwIfSignInPage). Surface it as SessionNotAuthenticatedError so
+      // the caller gets the sign-in hint and the bulk tools classify it as
+      // an auth failure rather than "other" (fleet-audit #669).
+      if (isLoginErrorMessage(parsed.errorMessage)) {
+        throw new SessionNotAuthenticatedError('Redfin', 'redfin.com');
+      }
       throw new Error(
         `Redfin stingray error: resultCode=${parsed.resultCode} (${
           parsed.errorMessage ?? 'no errorMessage'
@@ -186,9 +194,10 @@ export class RedfinClient {
     //      to WAF assets doesn't false-positive.
     //
     // A THIRD signal — a stingray envelope with resultCode != 0 whose
-    // errorMessage mentions login — is handled separately in
-    // `fetchStingrayJson` (it inspects the parsed envelope, not the raw
-    // result this method sees), so it is intentionally NOT checked here.
+    // errorMessage says the user must sign in — is handled in
+    // `fetchStingrayJson` via `isLoginErrorMessage` (it inspects the parsed
+    // envelope, not the raw result this method sees), so it is
+    // intentionally NOT checked here.
     //
     // We deliberately do NOT body-match `/login` since every signed-in
     // Redfin page has a "Sign in" link in its nav.
@@ -200,6 +209,19 @@ export class RedfinClient {
     if (looksLikeSignIn)
       throw new SessionNotAuthenticatedError('Redfin', 'redfin.com');
   }
+}
+
+/**
+ * Does a stingray `errorMessage` say the request needs a signed-in session?
+ * Matches sign-in phrasing ("must be logged in", "please sign in", "login
+ * required", "not authenticated", "unauthorized", "session expired") but
+ * not a bare mention of the word "login" elsewhere in an unrelated error.
+ */
+export function isLoginErrorMessage(msg: string | undefined): boolean {
+  if (!msg) return false;
+  return /\b(?:logged[ -]?in|log[ -]in|login required|sign(?:ed)?[ -]?in|not authenticated|unauthori[sz]ed|session (?:has )?expired)\b/i.test(
+    msg
+  );
 }
 
 /** Standard Redfin stingray response envelope. */

@@ -21,6 +21,16 @@ describe('redfin_get_by_address tool', () => {
     );
   });
 
+  // fleet-audit #673: the description promised an `address_alternates[]`
+  // field this tool never returns, and that it "does not throw" although
+  // session/bridge and region-guard errors propagate.
+  it('description does not promise fields or behaviour the tool lacks', async () => {
+    const tool = (await harness.listTools()).find((t) => t.name === 'redfin_get_by_address');
+    expect(tool?.description).not.toMatch(/does not throw/);
+    expect(tool?.description).not.toMatch(/companion `address_alternates\[\]` field/);
+    expect(tool?.description).toMatch(/redfin_get_property.*address_alternates/);
+  });
+
   it('resolves 158 Raven Blvd via autocomplete Addresses section', async () => {
     mockFetchStingrayJson.mockResolvedValueOnce({
       resultCode: 0,

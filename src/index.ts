@@ -19,6 +19,7 @@
 // between client restarts.
 import { runMcp, readEnvVar } from '@chrischall/mcp-utils';
 import { RedfinClient } from './client.js';
+import { resolveWsPort } from './port.js';
 import { FetchproxyTransport } from './transport-fetchproxy.js';
 import { registerSearchTools } from './tools/search.js';
 import { registerPropertyTools } from './tools/properties.js';
@@ -40,8 +41,7 @@ import { registerSessionTools } from './tools/sessions.js';
 
 const VERSION = '1.2.2'; // x-release-please-version
 
-const portRaw = readEnvVar('REDFIN_WS_PORT');
-const port = portRaw ? Number(portRaw) : undefined;
+const port = resolveWsPort(readEnvVar('REDFIN_WS_PORT'));
 
 const transport = new FetchproxyTransport({ port, version: VERSION });
 

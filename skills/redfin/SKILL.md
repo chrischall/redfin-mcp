@@ -54,8 +54,8 @@ That's it. No API keys, no env vars.
 
 ### Signed-in user data (the unique value vs. paid scrapers)
 
-- **`redfin_get_saved_homes(view?)`** — Your favorited homes, flattened across all collections. Returns address, price, beds/baths, status.
-- **`redfin_get_saved_searches(view?)`** — Your saved searches with region URLs and display text.
+- **`redfin_get_saved_homes(view?)`** — Your favorited homes, flattened across all collections. Returns `{ count, homes }` (address, price, beds/baths, status per home), with a `note` when none were found.
+- **`redfin_get_saved_searches(view?)`** — Your saved searches with region URLs and display text. Returns `{ count, searches }`, with a `note` when none were found.
 
 ## Response shape (`view`)
 

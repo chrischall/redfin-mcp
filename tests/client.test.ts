@@ -137,6 +137,41 @@ describe('RedfinClient', () => {
     );
   });
 
+  // fleet-audit #669: a stingray envelope rejecting the call for a missing
+  // session must surface as SessionNotAuthenticatedError (with its sign-in
+  // hint), not a generic error the bulk tools classify as "other".
+  it.each([
+    'User must be logged in',
+    'Please sign in to continue',
+    'Not authenticated',
+    'Unauthorized',
+    'Login required',
+  ])('fetchStingrayJson maps a login errorMessage (%j) to SessionNotAuthenticatedError', async (msg) => {
+    const client = new RedfinClient({
+      transport: stubTransport(async () => ({
+        status: 200,
+        body: `{}&&{"resultCode":101,"errorMessage":${JSON.stringify(msg)},"payload":null}`,
+        url: 'https://www.redfin.com/stingray/do/api/v3/favorites/homecards',
+      })),
+    });
+    await expect(
+      client.fetchStingrayJson('/stingray/do/api/v3/favorites/homecards')
+    ).rejects.toBeInstanceOf(SessionNotAuthenticatedError);
+  });
+
+  it('fetchStingrayJson keeps the generic error for a non-login errorMessage', async () => {
+    const client = new RedfinClient({
+      transport: stubTransport(async () => ({
+        status: 200,
+        body: '{}&&{"resultCode":17,"errorMessage":"Invalid catalog (login page id 5 not found)x","payload":null}',
+        url: 'https://www.redfin.com/stingray/api/x',
+      })),
+    });
+    const err = await client.fetchStingrayJson('/stingray/api/x').catch((e) => e);
+    expect(err).not.toBeInstanceOf(SessionNotAuthenticatedError);
+    expect((err as Error).message).toMatch(/resultCode=17/);
+  });
+
   it('fetchStingrayJson throws on invalid JSON after stripping prefix', async () => {
     const client = new RedfinClient({
       transport: stubTransport(async () => ({

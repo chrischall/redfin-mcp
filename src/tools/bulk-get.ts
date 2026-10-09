@@ -18,7 +18,7 @@ import {
  * `redfin_bulk_get`: unbounded structured fetch for many properties in
  * a single tool call. Designed for "I have 50 saved homes, give me
  * everything" workflows that today require sequential
- * `redfin_compare_properties` rounds (8-property cap each).
+ * `redfin_compare_properties` rounds (25-property cap each).
  *
  * Each target can be a URL or a property_id+listing_id pair. Per-target
  * errors are captured per-row so a single bad ID doesn't fail the

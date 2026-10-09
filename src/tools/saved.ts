@@ -15,7 +15,8 @@ import { redfinPhotoUrl } from './photos.js';
  *      propertyIds are embedded inline as `/home/<id>` URLs.
  *   2. Regex out the propertyIds.
  *   3. GET `/stingray/do/api/v3/favorites/homecards?b=<csv-ids>&r=`
- *      to fetch the home-card details for each.
+ *      (≤50 ids per request) to fetch the home-card details for each,
+ *      then keep only cards Redfin flags as favorites (not X'd out).
  *
  * Saved searches:
  *   1. GET `/myredfin/saved-searches` HTML. Per-search detail (name,
@@ -75,7 +76,7 @@ interface HomeCardCommonData {
   availablePhotos?: string;
 }
 
-interface HomeCard {
+export interface HomeCard {
   propertyId?: number;
   isFavorite?: boolean;
   isXOut?: boolean;
@@ -111,6 +112,18 @@ export function parseAvailablePhotos(s: string | undefined): number | undefined 
   const hi = parseInt(m[2], 10);
   if (Number.isNaN(lo) || Number.isNaN(hi) || hi < lo) return undefined;
   return hi - lo + 1;
+}
+
+/** Max property ids per homecards request (keeps the `b=` URL bounded). */
+export const HOMECARDS_BATCH_SIZE = 50;
+
+/**
+ * A homecard belongs in "my saved homes" unless Redfin says otherwise:
+ * `isFavorite: false` (a non-favorite the page scrape swept up) or
+ * `isXOut: true` (a home the user dismissed). A card with no flag is kept.
+ */
+export function isSavedCard(hc: HomeCard): boolean {
+  return hc.isFavorite !== false && hc.isXOut !== true;
 }
 
 export function formatHomeCard(hc: HomeCard): FormattedSavedHome | null {
@@ -182,6 +195,16 @@ export function extractSavedSearches(html: string): FormattedSavedSearch[] {
   return [...seen.values()];
 }
 
+const NO_FAVORITES_NOTE =
+  'The favorites page contained no /home/<id> links. Either the signed-in account has no saved homes, ' +
+  'or Redfin changed the favorites page and the scrape found none — check redfin.com/myredfin/favorites ' +
+  'in the bridged tab to tell which.';
+
+const NO_SEARCHES_NOTE =
+  'The saved-searches page contained no region search links. Either the signed-in account has no saved searches, ' +
+  'or Redfin changed the page and the scrape found none — check redfin.com/myredfin/saved-searches ' +
+  'in the bridged tab to tell which.';
+
 export function registerSavedTools(
   server: McpServer,
   client: RedfinClient
@@ -191,7 +214,7 @@ export function registerSavedTools(
     {
       title: 'Get my saved (favorited) Redfin homes',
       description:
-        "The signed-in user's favorited homes on redfin.com. Returns address, price, beds/baths, status. Requires the user to be signed in. Read-only; safe to call repeatedly.",
+        "The signed-in user's favorited homes on redfin.com. Returns `{ count, homes }` — each home has address, price, beds/baths, status — plus a `note` when none were found (no favorites vs. a page-scrape miss). Requires the user to be signed in. Read-only; safe to call repeatedly.",
       annotations: {
         title: 'Get my saved (favorited) Redfin homes',
         readOnlyHint: true,
@@ -204,16 +227,36 @@ export function registerSavedTools(
     async ({ view }) => {
       const html = await client.fetchHtml('/myredfin/favorites');
       const ids = extractFavoritePropertyIds(html);
-      if (ids.length === 0) return minifiedResult([]);
-      const params = new URLSearchParams({ b: ids.join(','), r: '' });
-      const env = await client.fetchStingrayJson<HomecardsPayload>(
-        `/stingray/do/api/v3/favorites/homecards?${params.toString()}`
-      );
-      const cards = env.payload?.homecards ?? [];
+      // Same `{ count, ... }` envelope as every other read tool, plus a
+      // note when the scrape found nothing, so "signed in, no favorites" and
+      // "the page changed and the regex missed" aren't silently identical
+      // (fleet-audit #1094).
+      if (ids.length === 0) {
+        return minifiedResult({
+          count: 0,
+          homes: [],
+          note: NO_FAVORITES_NOTE,
+        });
+      }
+      // The id scrape is a regex over the whole page, so it can pick up
+      // non-favorite cards (recently viewed, recommendations); the homecards
+      // response's own isFavorite/isXOut flags are the authority. Ids go out
+      // in batches so a long favorites list can't blow the URL length
+      // (fleet-audit #668).
+      const cards: HomeCard[] = [];
+      for (let i = 0; i < ids.length; i += HOMECARDS_BATCH_SIZE) {
+        const batch = ids.slice(i, i + HOMECARDS_BATCH_SIZE);
+        const params = new URLSearchParams({ b: batch.join(','), r: '' });
+        const env = await client.fetchStingrayJson<HomecardsPayload>(
+          `/stingray/do/api/v3/favorites/homecards?${params.toString()}`
+        );
+        cards.push(...(env.payload?.homecards ?? []));
+      }
       const formatted = cards
+        .filter(isSavedCard)
         .map(formatHomeCard)
         .filter((c): c is FormattedSavedHome => c !== null);
-      return viewResponse(view, formatted);
+      return viewResponse(view, { count: formatted.length, homes: formatted });
     }
   );
 
@@ -222,7 +265,7 @@ export function registerSavedTools(
     {
       title: 'Get my saved Redfin searches',
       description:
-        "The signed-in user's saved searches on redfin.com, derived from the saved-searches page HTML. Each entry is `{ url, region_segment, display_text }`. Requires the user to be signed in. Returns an empty array if the user has none. Read-only; safe to call repeatedly.",
+        "The signed-in user's saved searches on redfin.com, derived from the saved-searches page HTML. Returns `{ count, searches }`; each entry is `{ url, region_segment, display_text }`. Requires the user to be signed in. When none are found, `searches` is empty and a `note` explains it may be no saved searches or a page-scrape miss. Read-only; safe to call repeatedly.",
       annotations: {
         title: 'Get my saved Redfin searches',
         readOnlyHint: true,
@@ -235,7 +278,11 @@ export function registerSavedTools(
     async ({ view }) => {
       const html = await client.fetchHtml('/myredfin/saved-searches');
       const searches = extractSavedSearches(html);
-      return viewResponse(view, searches);
+      return viewResponse(view, {
+        count: searches.length,
+        searches,
+        ...(searches.length === 0 ? { note: NO_SEARCHES_NOTE } : {}),
+      });
     }
   );
 }

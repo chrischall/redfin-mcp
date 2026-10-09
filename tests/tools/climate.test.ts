@@ -101,6 +101,26 @@ describe('formatClimate', () => {
     expect(out.heat?.cumulative_risk_year20).toBe(12);
   });
 
+  it('drops flood-chance entries with no numeric chance instead of reporting 0% (fleet-audit #667)', () => {
+    const out = formatClimate(
+      {
+        fsid: 1,
+        floodFactor: 4,
+        chance: [
+          { year: 2024, threshold: '0', mid: 0.2 },
+          { year: 2034, threshold: '0' },
+          { year: 2044, threshold: '0', chance: 0.3 },
+        ],
+      },
+      null,
+      null
+    );
+    expect(out.flood?.annual_chance_30yr).toEqual([
+      { year: 2024, threshold: '0', chance_pct: 0.2 },
+      { year: 2044, threshold: '0', chance_pct: 0.3 },
+    ]);
+  });
+
   it('omits factor objects when their primary score is missing', () => {
     const out = formatClimate(null, null, null);
     expect(out.flood).toBeUndefined();
@@ -155,7 +175,7 @@ describe('redfin_get_climate_risk tool', () => {
   it('returns {available: false, reason} when the page has no climate data (#51)', async () => {
     mockFetchHtml.mockResolvedValueOnce('<html>no climate data here</html>');
     const r = await harness.callTool('redfin_get_climate_risk', {
-      url: '/x',
+      url: '/x/home/9',
     });
     const parsed = parseToolResult<{
       available: boolean;
@@ -180,7 +200,7 @@ describe('redfin_get_climate_risk tool', () => {
     mockFetchHtml.mockResolvedValueOnce(
       'a "floodData":{"fsid":1,"floodFactor":2} b "fireData":{"fsid":1,"fireFactor":3}'
     );
-    const r = await harness.callTool('redfin_get_climate_risk', { url: '/x' });
+    const r = await harness.callTool('redfin_get_climate_risk', { url: '/x/home/9' });
     const parsed = parseToolResult<{ available: boolean; not_covered: string[] }>(
       r
     );
@@ -192,9 +212,57 @@ describe('redfin_get_climate_risk tool', () => {
     mockFetchHtml.mockResolvedValueOnce(
       'a "censusTract":"371110304002" b "fireData":{"fsid":1,"fireFactor":3}'
     );
-    const r = await harness.callTool('redfin_get_climate_risk', { url: '/x' });
+    const r = await harness.callTool('redfin_get_climate_risk', { url: '/x/home/9' });
     const parsed = parseToolResult<{ cluster_id?: string }>(r);
     expect(parsed.cluster_id).toBe('371110304002');
+  });
+});
+
+describe('climate tools only fetch homedetails pages (fleet-audit #676)', () => {
+  let guardHarness: Awaited<ReturnType<typeof createTestHarness>>;
+  afterAll(async () => {
+    if (guardHarness) await guardHarness.close();
+  });
+
+  it('setup', async () => {
+    guardHarness = await createTestHarness((server) =>
+      registerClimateTools(server, mockClient)
+    );
+  });
+
+  it.each([
+    '/myredfin/favorites',
+    'https://www.redfin.com/myredfin/settings',
+    '/myredfin/favorites?next=/home/123',
+    '/stingray/do/api/v3/favorites/homecards#/home/1',
+  ])('rejects %s without fetching it through the session', async (url) => {
+    const r = await guardHarness.callTool('redfin_get_climate_risk', { url });
+    expect(r.isError).toBe(true);
+    expect(JSON.stringify(r.content)).toMatch(/\/home\/<propertyId>/);
+    expect(mockFetchHtml).not.toHaveBeenCalled();
+  });
+
+  it('bulk: a non-homedetails URL is a per-row error and is never fetched', async () => {
+    mockFetchHtml.mockResolvedValue('"fireData":{"fsid":1,"fireFactor":5}');
+    const r = await guardHarness.callTool('redfin_get_climate_risk_bulk', {
+      urls: ['/NY/X/foo/home/1', '/myredfin/favorites'],
+    });
+    const parsed = parseToolResult<{
+      errored: number;
+      results: Array<{ url: string; error?: string }>;
+    }>(r);
+    expect(parsed.errored).toBe(1);
+    expect(parsed.results[1].error).toMatch(/\/home\/<propertyId>/);
+    expect(mockFetchHtml).toHaveBeenCalledTimes(1);
+    expect(mockFetchHtml.mock.calls[0][0]).toBe('/NY/X/foo/home/1');
+  });
+
+  it('baseline: a non-homedetails sample is never fetched', async () => {
+    mockFetchHtml.mockResolvedValue('"fireData":{"fsid":1,"fireFactor":5}');
+    await guardHarness.callTool('redfin_get_area_climate_baseline', {
+      sample_urls: ['/NY/X/foo/home/1', '/myredfin/favorites'],
+    });
+    expect(mockFetchHtml).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -420,6 +488,64 @@ describe('redfin_get_area_climate_baseline tool (#53)', () => {
       }
     );
     expect(rEleven.isError).toBeTruthy();
+  });
+});
+
+describe('redfin_get_area_climate_baseline is bounded by an overall deadline (fleet-audit #1093)', () => {
+  it('returns the settled samples plus a retryable pending row when one sample hangs', async () => {
+    const deadlineHarness = await createTestHarness((server) =>
+      registerClimateTools(server, mockClient, { overallDeadlineMs: 200 })
+    );
+    mockFetchHtml.mockImplementation(async (path: string) => {
+      if (path.includes('home/2')) return new Promise(() => {});
+      return '"fireData":{"fsid":1,"fireFactor":4}';
+    });
+    const start = Date.now();
+    const r = await deadlineHarness.callTool('redfin_get_area_climate_baseline', {
+      sample_urls: ['/x/home/1', '/x/home/2', '/x/home/3'],
+    });
+    expect(Date.now() - start).toBeLessThan(3000);
+    expect(r.isError).toBeFalsy();
+    const parsed = parseToolResult<{
+      available: boolean;
+      sample_count: number;
+      pending?: number;
+      baseline_fire_factor?: number;
+      samples: Array<{ url: string; status?: string; retryable?: boolean }>;
+    }>(r);
+    expect(parsed.available).toBe(true);
+    expect(parsed.sample_count).toBe(2);
+    expect(parsed.baseline_fire_factor).toBe(4);
+    expect(parsed.pending).toBe(1);
+    expect(parsed.samples[1]).toMatchObject({
+      url: 'https://www.redfin.com/x/home/2',
+      status: 'pending',
+      retryable: true,
+    });
+    await deadlineHarness.close();
+  }, 5000);
+
+  it('retries a transient bridge timeout once per sample', async () => {
+    const h = await createTestHarness((server) => registerClimateTools(server, mockClient));
+    let calls = 0;
+    mockFetchHtml.mockImplementation(async () => {
+      calls++;
+      if (calls === 1) {
+        throw new FetchproxyTimeoutError({
+          url: 'https://www.redfin.com/x/home/1',
+          timeoutMs: 30_000,
+        });
+      }
+      return '"fireData":{"fsid":1,"fireFactor":5}';
+    });
+    const r = await h.callTool('redfin_get_area_climate_baseline', {
+      sample_urls: ['/x/home/1', '/x/home/2'],
+    });
+    const parsed = parseToolResult<{ sample_count: number; pending?: number }>(r);
+    expect(parsed.sample_count).toBe(2);
+    expect(parsed.pending).toBeUndefined();
+    expect(calls).toBe(3);
+    await h.close();
   });
 });
 

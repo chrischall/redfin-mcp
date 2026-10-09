@@ -198,8 +198,9 @@ describe('redfin_get_saved_homes tool', () => {
     const cardPath = mockFetchStingrayJson.mock.calls[0][0] as string;
     expect(cardPath).toMatch(/favorites\/homecards\?b=100%2C200/);
 
-    const parsed = parseToolResult<Array<{ property_id: number }>>(result);
-    expect(parsed.map((h) => h.property_id)).toEqual([100, 200]);
+    const parsed = parseToolResult<{ count: number; homes: Array<{ property_id: number }> }>(result);
+    expect(parsed.count).toBe(2);
+    expect(parsed.homes.map((h) => h.property_id)).toEqual([100, 200]);
   });
 
   /**
@@ -247,9 +248,11 @@ describe('redfin_get_saved_homes tool', () => {
     // the one the regression shipped on.
     const result = await harness.callTool('redfin_get_saved_homes', {});
     expect(result.isError).toBeFalsy();
-    const [home] = parseToolResult<
-      Array<{ image_url?: string; thumbnail_url?: string; photo_count?: number }>
-    >(result);
+    const {
+      homes: [home],
+    } = parseToolResult<{
+      homes: Array<{ image_url?: string; thumbnail_url?: string; photo_count?: number }>;
+    }>(result);
     expect(home.image_url).toBe(IMAGE_URL);
     expect(home.thumbnail_url).toBe(THUMBNAIL_URL);
     // `photo_count` is the caller's cue that redfin_get_property_photos has
@@ -266,7 +269,9 @@ describe('redfin_get_saved_homes tool', () => {
       view: 'compact',
     });
     expect(result.isError).toBeFalsy();
-    const [home] = parseToolResult<Array<{ image_url?: string }>>(result);
+    const {
+      homes: [home],
+    } = parseToolResult<{ homes: Array<{ image_url?: string }> }>(result);
     expect(home.image_url).toBe(IMAGE_URL);
   });
 
@@ -275,9 +280,9 @@ describe('redfin_get_saved_homes tool', () => {
     const result = await harness.callTool('redfin_get_saved_homes', {
       view: 'full',
     });
-    const [home] = parseToolResult<
-      Array<{ image_url?: string; thumbnail_url?: string }>
-    >(result);
+    const {
+      homes: [home],
+    } = parseToolResult<{ homes: Array<{ image_url?: string; thumbnail_url?: string }> }>(result);
     expect(home.image_url).toBe(IMAGE_URL);
     expect(home.thumbnail_url).toBe(THUMBNAIL_URL);
   });
@@ -290,11 +295,67 @@ describe('redfin_get_saved_homes tool', () => {
     expect((result.content as Array<{ text: string }>)[0].text.split('\n')).toHaveLength(1);
   });
 
-  it('returns [] without calling homecards when user has no favorites', async () => {
+  // fleet-audit #1094: same `{ count, ... }` envelope as every other read
+  // tool, and a note so an empty account can be told from a scrape miss.
+  it('returns { count: 0, homes: [], note } without calling homecards when no favorites are found', async () => {
     mockFetchHtml.mockResolvedValueOnce('<html>no favorites yet</html>');
     const result = await harness.callTool('redfin_get_saved_homes', {});
-    expect(parseToolResult(result)).toEqual([]);
+    const parsed = parseToolResult<{ count: number; homes: unknown[]; note?: string }>(result);
+    expect(parsed.count).toBe(0);
+    expect(parsed.homes).toEqual([]);
+    expect(parsed.note).toMatch(/no saved homes.*or/i);
     expect(mockFetchStingrayJson).not.toHaveBeenCalled();
+  });
+});
+
+describe('redfin_get_saved_homes keeps only favorited cards (fleet-audit #668)', () => {
+  it('drops cards Redfin marks isFavorite:false or isXOut', async () => {
+    mockFetchHtml.mockResolvedValueOnce(
+      '<a href="/a/home/1">fav</a><a href="/b/home/2">recently viewed</a><a href="/c/home/3">x-out</a><a href="/d/home/4">unknown</a>'
+    );
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        homecards: [
+          { propertyId: 1, isFavorite: true },
+          { propertyId: 2, isFavorite: false },
+          { propertyId: 3, isFavorite: true, isXOut: true },
+          { propertyId: 4 },
+        ],
+      },
+    });
+    const result = await harness.callTool('redfin_get_saved_homes', {});
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    const ids = (JSON.stringify(JSON.parse(text)).match(/"property_id":\d+/g) ?? []).map((m) =>
+      Number(m.split(':')[1])
+    );
+    expect(ids).toEqual([1, 4]);
+  });
+
+  it('requests homecards in batches of at most 50 ids', async () => {
+    const ids = Array.from({ length: 120 }, (_, i) => i + 1);
+    mockFetchHtml.mockResolvedValueOnce(ids.map((id) => `<a href="/x/home/${id}">h</a>`).join(''));
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      const b = new URLSearchParams(path.split('?')[1]).get('b') ?? '';
+      return {
+        resultCode: 0,
+        payload: {
+          homecards: b.split(',').map((id) => ({ propertyId: Number(id), isFavorite: true })),
+        },
+      };
+    });
+    const result = await harness.callTool('redfin_get_saved_homes', {});
+    expect(result.isError).toBeFalsy();
+    expect(mockFetchStingrayJson).toHaveBeenCalledTimes(3);
+    for (const [path] of mockFetchStingrayJson.mock.calls) {
+      const b = new URLSearchParams((path as string).split('?')[1]).get('b')!;
+      expect(b.split(',').length).toBeLessThanOrEqual(50);
+    }
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text.match(/"property_id":/g)).toHaveLength(120);
+    // Order is preserved across batches.
+    expect(text.indexOf('"property_id":1,')).toBeLessThan(text.indexOf('"property_id":120,'));
+    mockFetchStingrayJson.mockReset();
   });
 });
 
@@ -305,13 +366,17 @@ describe('redfin_get_saved_searches tool', () => {
     );
     const result = await harness.callTool('redfin_get_saved_searches', {});
     expect(mockFetchHtml.mock.calls[0][0]).toBe('/myredfin/saved-searches');
-    const parsed = parseToolResult<Array<{ region_segment: string }>>(result);
-    expect(parsed[0].region_segment).toBe('/city/30749/NY/New-York');
+    const parsed = parseToolResult<{ count: number; searches: Array<{ region_segment: string }> }>(result);
+    expect(parsed.count).toBe(1);
+    expect(parsed.searches[0].region_segment).toBe('/city/30749/NY/New-York');
   });
 
-  it('returns [] when no region-shape URLs found', async () => {
+  it('returns { count: 0, searches: [], note } when no region-shape URLs found', async () => {
     mockFetchHtml.mockResolvedValueOnce('<html>no saved</html>');
     const result = await harness.callTool('redfin_get_saved_searches', {});
-    expect(parseToolResult(result)).toEqual([]);
+    const parsed = parseToolResult<{ count: number; searches: unknown[]; note?: string }>(result);
+    expect(parsed.count).toBe(0);
+    expect(parsed.searches).toEqual([]);
+    expect(parsed.note).toMatch(/no saved searches.*or/i);
   });
 });
