@@ -118,6 +118,44 @@ describe('redfin_get_comparable_rentals tool', () => {
     expect(parsed.rentals.map((r) => r.monthly_rent)).toEqual([3000, 3400]);
   });
 
+  // fleet-audit #672: inputs are sent to Redfin as filters, so a reversed
+  // range or an impossible coordinate must be refused, not forwarded.
+  it('rejects rent_estimate_low > rent_estimate_high without calling Redfin', async () => {
+    const r = await harness.callTool('redfin_get_comparable_rentals', {
+      property_id: 1,
+      latitude: 40,
+      longitude: -73,
+      rent_estimate_low: 4000,
+      rent_estimate_high: 3000,
+    });
+    expect(r.isError).toBe(true);
+    expect(JSON.stringify(r.content)).toMatch(/rent_estimate_low.*rent_estimate_high/);
+    expect(mockFetchStingrayJson).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { latitude: 91, longitude: 0 },
+    { latitude: -91, longitude: 0 },
+    { latitude: 0, longitude: 181 },
+    { latitude: 0, longitude: -181 },
+  ])('rejects out-of-range coordinates %o', async (coords) => {
+    const r = await harness.callTool('redfin_get_comparable_rentals', {
+      property_id: 1,
+      ...coords,
+      rent_estimate_low: 1000,
+      rent_estimate_high: 2000,
+    });
+    expect(r.isError).toBe(true);
+    expect(mockFetchStingrayJson).not.toHaveBeenCalled();
+  });
+
+  it('does not claim redfin_get_property supplies the rent estimate', async () => {
+    const tools = await harness.listTools();
+    const tool = tools.find((t) => t.name === 'redfin_get_comparable_rentals');
+    expect(tool?.description).not.toMatch(/typically taken from the upstream/);
+    expect(tool?.description).toMatch(/does not return a rent estimate/);
+  });
+
   it('returns count=0 when no comps are found', async () => {
     mockFetchStingrayJson.mockResolvedValueOnce({
       resultCode: 0,
