@@ -228,18 +228,20 @@ export function formatClimate(
       flood_factor: flood.floodFactor,
       fema_zones: flood.femaZones,
       risk_direction: flood.riskDirection,
-      annual_chance_30yr: flood.chance
-        ?.filter((c) => typeof c.year === 'number')
-        .map((c) => ({
-          year: c.year as number,
-          threshold: c.threshold ?? '',
-          chance_pct:
-            typeof c.mid === 'number'
-              ? c.mid
-              : typeof c.chance === 'number'
-                ? c.chance
-                : 0,
-        })),
+      // An entry with neither `mid` nor `chance` is missing data, not a
+      // 0% chance — drop it rather than report zero flood risk for that
+      // year/threshold (fleet-audit #667).
+      annual_chance_30yr: flood.chance?.flatMap((c) => {
+        if (typeof c.year !== 'number') return [];
+        const pct =
+          typeof c.mid === 'number'
+            ? c.mid
+            : typeof c.chance === 'number'
+              ? c.chance
+              : undefined;
+        if (pct === undefined) return [];
+        return [{ year: c.year, threshold: c.threshold ?? '', chance_pct: pct }];
+      }),
     };
   }
   if (fire && typeof fire.fireFactor === 'number') {

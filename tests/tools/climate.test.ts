@@ -101,6 +101,26 @@ describe('formatClimate', () => {
     expect(out.heat?.cumulative_risk_year20).toBe(12);
   });
 
+  it('drops flood-chance entries with no numeric chance instead of reporting 0% (fleet-audit #667)', () => {
+    const out = formatClimate(
+      {
+        fsid: 1,
+        floodFactor: 4,
+        chance: [
+          { year: 2024, threshold: '0', mid: 0.2 },
+          { year: 2034, threshold: '0' },
+          { year: 2044, threshold: '0', chance: 0.3 },
+        ],
+      },
+      null,
+      null
+    );
+    expect(out.flood?.annual_chance_30yr).toEqual([
+      { year: 2024, threshold: '0', chance_pct: 0.2 },
+      { year: 2044, threshold: '0', chance_pct: 0.3 },
+    ]);
+  });
+
   it('omits factor objects when their primary score is missing', () => {
     const out = formatClimate(null, null, null);
     expect(out.flood).toBeUndefined();
