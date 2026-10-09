@@ -298,6 +298,57 @@ describe('redfin_get_saved_homes tool', () => {
   });
 });
 
+describe('redfin_get_saved_homes keeps only favorited cards (fleet-audit #668)', () => {
+  it('drops cards Redfin marks isFavorite:false or isXOut', async () => {
+    mockFetchHtml.mockResolvedValueOnce(
+      '<a href="/a/home/1">fav</a><a href="/b/home/2">recently viewed</a><a href="/c/home/3">x-out</a><a href="/d/home/4">unknown</a>'
+    );
+    mockFetchStingrayJson.mockResolvedValueOnce({
+      resultCode: 0,
+      payload: {
+        homecards: [
+          { propertyId: 1, isFavorite: true },
+          { propertyId: 2, isFavorite: false },
+          { propertyId: 3, isFavorite: true, isXOut: true },
+          { propertyId: 4 },
+        ],
+      },
+    });
+    const result = await harness.callTool('redfin_get_saved_homes', {});
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    const ids = (JSON.stringify(JSON.parse(text)).match(/"property_id":\d+/g) ?? []).map((m) =>
+      Number(m.split(':')[1])
+    );
+    expect(ids).toEqual([1, 4]);
+  });
+
+  it('requests homecards in batches of at most 50 ids', async () => {
+    const ids = Array.from({ length: 120 }, (_, i) => i + 1);
+    mockFetchHtml.mockResolvedValueOnce(ids.map((id) => `<a href="/x/home/${id}">h</a>`).join(''));
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      const b = new URLSearchParams(path.split('?')[1]).get('b') ?? '';
+      return {
+        resultCode: 0,
+        payload: {
+          homecards: b.split(',').map((id) => ({ propertyId: Number(id), isFavorite: true })),
+        },
+      };
+    });
+    const result = await harness.callTool('redfin_get_saved_homes', {});
+    expect(result.isError).toBeFalsy();
+    expect(mockFetchStingrayJson).toHaveBeenCalledTimes(3);
+    for (const [path] of mockFetchStingrayJson.mock.calls) {
+      const b = new URLSearchParams((path as string).split('?')[1]).get('b')!;
+      expect(b.split(',').length).toBeLessThanOrEqual(50);
+    }
+    const text = (result.content as Array<{ text: string }>)[0].text;
+    expect(text.match(/"property_id":/g)).toHaveLength(120);
+    // Order is preserved across batches.
+    expect(text.indexOf('"property_id":1,')).toBeLessThan(text.indexOf('"property_id":120,'));
+    mockFetchStingrayJson.mockReset();
+  });
+});
+
 describe('redfin_get_saved_searches tool', () => {
   it('fetches and extracts saved-search entries from the page HTML', async () => {
     mockFetchHtml.mockResolvedValueOnce(
