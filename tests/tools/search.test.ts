@@ -159,6 +159,25 @@ describe('buildGisPath', () => {
     expect(path).toMatch(/uipt=2%2C3/);
   });
 
+  // fleet-audit #670: in Redfin's uipt scheme 6 is "Other" and 7 is
+  // "Manufactured" (1 house, 2 condo, 3 townhouse, 4 multi-family, 5 land,
+  // 6 other, 7 manufactured, 8 co-op).
+  it('maps manufactured to uipt 7, not 6 ("Other")', () => {
+    const path = buildGisPath(region, {
+      location: 'x',
+      home_types: ['manufactured'],
+    });
+    expect(path).toMatch(/uipt=7(&|$)/);
+  });
+
+  it('client-side home_types filter keeps a uiPropertyType 7 home for manufactured and drops 6', () => {
+    const input = { location: 'x', home_types: ['manufactured' as const] };
+    const mk = (uipt: number) =>
+      formatHome({ propertyId: uipt, uiPropertyType: uipt, price: { value: 1 } } as RawHome)!;
+    expect(matchesFilters(mk(7), input)).toBe(true);
+    expect(matchesFilters(mk(6), input)).toBe(false);
+  });
+
   it('encodes beds/baths minimums', () => {
     const path = buildGisPath(region, {
       location: 'x',

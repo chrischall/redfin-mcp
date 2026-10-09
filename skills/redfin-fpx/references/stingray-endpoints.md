@@ -64,7 +64,7 @@ Requires a resolved `region_id` + `region_type` from §1. Query params
 | `sf=1,2,3,5,6,7` | static — result fields to include |
 | `start=0` | pagination offset |
 | `status` | `1` = active for sale; `9` = active+coming-soon+contingent+pending (broader — what redfin-mcp uses as its default "everything for sale" view) |
-| `uipt` | CSV of property-type bitmap: house=1, condo=2, townhouse=3, multi_family=4, land=5, manufactured=6 (omit/`1,2,3,4,5,6,7,8` for all) |
+| `uipt` | CSV of property-type bitmap: house=1, condo=2, townhouse=3, multi_family=4, land=5, other=6, manufactured=7, co-op=8 (omit/`1,2,3,4,5,6,7,8` for all) |
 | `v=8` | static |
 | `min_price`, `max_price` | optional, USD |
 | `num_beds`, `num_baths` | optional, minimums |

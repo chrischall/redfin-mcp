@@ -35,14 +35,20 @@ type HomeType =
   | 'manufactured'
   | 'land';
 
-/** Redfin's `uipt` (UI Property Type) bitmap values. */
+/**
+ * Redfin's `uipt` (UI Property Type) codes — also echoed back per home as
+ * `uiPropertyType`. Full scheme: 1 house, 2 condo, 3 townhouse,
+ * 4 multi-family, 5 land, 6 other, 7 manufactured, 8 co-op (the default
+ * `uipt=1,…,8` is "all"). `manufactured` was mapped to 6 ("Other") until
+ * fleet-audit #670.
+ */
 const HOME_TYPE_UIPT: Record<HomeType, number> = {
   house: 1,
   condo: 2,
   townhouse: 3,
   multi_family: 4,
   land: 5,
-  manufactured: 6,
+  manufactured: 7,
 };
 
 type StatusKey = 'for_sale' | 'for_rent' | 'sold';
