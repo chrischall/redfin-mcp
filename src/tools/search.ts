@@ -803,7 +803,11 @@ export function registerSearchTools(
       title: 'Exhaustively sweep a Redfin map area',
       description:
         "Enumerate EVERY for-sale Redfin listing inside a bounding box without silent truncation. Redfin's gis API returns at most 350 homes per call and ignores server-side filters, so this tool searches drawn-map polygons, recursively quarters any tile that hits the cap, dedupes by property_id and re-applies the caller's filters locally. Homes outside the box and tiles where Redfin drifted to another region are left out. Alternatively pass `zips` (ZIP mode) to sweep a list of ZIP regions instead of map tiles, when Redfin ignores drawn-map polygons. Returns a completeness summary (requests, tiles or ZIPs, unique listings, tiles/ZIPs still at the cap, drift warnings) plus the listings inline by default; pass the optional `output_path` to write them to a new JSON file instead, for large areas. Sequential requests with a delay. Read-only against Redfin; the only write is the optional local output file.",
-      annotations: { title: 'Sweep Redfin area', readOnlyHint: false, idempotentHint: true, openWorldHint: true },
+      // destructiveHint: false — read-only against Redfin; the only write is
+      // the optional local output_path, which must be a NEW absolute file
+      // (existing files are refused and the write uses flag 'wx'), so no
+      // prior state is ever lost. Purely additive.
+      annotations: { title: 'Sweep Redfin area', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
       inputSchema: z.object({
         bounds: z
           .object({ north: z.number(), south: z.number(), east: z.number(), west: z.number() })
