@@ -195,6 +195,16 @@ export function extractSavedSearches(html: string): FormattedSavedSearch[] {
   return [...seen.values()];
 }
 
+const NO_FAVORITES_NOTE =
+  'The favorites page contained no /home/<id> links. Either the signed-in account has no saved homes, ' +
+  'or Redfin changed the favorites page and the scrape found none — check redfin.com/myredfin/favorites ' +
+  'in the bridged tab to tell which.';
+
+const NO_SEARCHES_NOTE =
+  'The saved-searches page contained no region search links. Either the signed-in account has no saved searches, ' +
+  'or Redfin changed the page and the scrape found none — check redfin.com/myredfin/saved-searches ' +
+  'in the bridged tab to tell which.';
+
 export function registerSavedTools(
   server: McpServer,
   client: RedfinClient
@@ -204,7 +214,7 @@ export function registerSavedTools(
     {
       title: 'Get my saved (favorited) Redfin homes',
       description:
-        "The signed-in user's favorited homes on redfin.com. Returns address, price, beds/baths, status. Requires the user to be signed in. Read-only; safe to call repeatedly.",
+        "The signed-in user's favorited homes on redfin.com. Returns `{ count, homes }` — each home has address, price, beds/baths, status — plus a `note` when none were found (no favorites vs. a page-scrape miss). Requires the user to be signed in. Read-only; safe to call repeatedly.",
       annotations: {
         title: 'Get my saved (favorited) Redfin homes',
         readOnlyHint: true,
@@ -217,7 +227,17 @@ export function registerSavedTools(
     async ({ view }) => {
       const html = await client.fetchHtml('/myredfin/favorites');
       const ids = extractFavoritePropertyIds(html);
-      if (ids.length === 0) return minifiedResult([]);
+      // Same `{ count, ... }` envelope as every other read tool, plus a
+      // note when the scrape found nothing, so "signed in, no favorites" and
+      // "the page changed and the regex missed" aren't silently identical
+      // (fleet-audit #1094).
+      if (ids.length === 0) {
+        return minifiedResult({
+          count: 0,
+          homes: [],
+          note: NO_FAVORITES_NOTE,
+        });
+      }
       // The id scrape is a regex over the whole page, so it can pick up
       // non-favorite cards (recently viewed, recommendations); the homecards
       // response's own isFavorite/isXOut flags are the authority. Ids go out
@@ -236,7 +256,7 @@ export function registerSavedTools(
         .filter(isSavedCard)
         .map(formatHomeCard)
         .filter((c): c is FormattedSavedHome => c !== null);
-      return viewResponse(view, formatted);
+      return viewResponse(view, { count: formatted.length, homes: formatted });
     }
   );
 
@@ -245,7 +265,7 @@ export function registerSavedTools(
     {
       title: 'Get my saved Redfin searches',
       description:
-        "The signed-in user's saved searches on redfin.com, derived from the saved-searches page HTML. Each entry is `{ url, region_segment, display_text }`. Requires the user to be signed in. Returns an empty array if the user has none. Read-only; safe to call repeatedly.",
+        "The signed-in user's saved searches on redfin.com, derived from the saved-searches page HTML. Returns `{ count, searches }`; each entry is `{ url, region_segment, display_text }`. Requires the user to be signed in. When none are found, `searches` is empty and a `note` explains it may be no saved searches or a page-scrape miss. Read-only; safe to call repeatedly.",
       annotations: {
         title: 'Get my saved Redfin searches',
         readOnlyHint: true,
@@ -258,7 +278,11 @@ export function registerSavedTools(
     async ({ view }) => {
       const html = await client.fetchHtml('/myredfin/saved-searches');
       const searches = extractSavedSearches(html);
-      return viewResponse(view, searches);
+      return viewResponse(view, {
+        count: searches.length,
+        searches,
+        ...(searches.length === 0 ? { note: NO_SEARCHES_NOTE } : {}),
+      });
     }
   );
 }
