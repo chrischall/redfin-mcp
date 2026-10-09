@@ -491,6 +491,64 @@ describe('redfin_get_area_climate_baseline tool (#53)', () => {
   });
 });
 
+describe('redfin_get_area_climate_baseline is bounded by an overall deadline (fleet-audit #1093)', () => {
+  it('returns the settled samples plus a retryable pending row when one sample hangs', async () => {
+    const deadlineHarness = await createTestHarness((server) =>
+      registerClimateTools(server, mockClient, { overallDeadlineMs: 200 })
+    );
+    mockFetchHtml.mockImplementation(async (path: string) => {
+      if (path.includes('home/2')) return new Promise(() => {});
+      return '"fireData":{"fsid":1,"fireFactor":4}';
+    });
+    const start = Date.now();
+    const r = await deadlineHarness.callTool('redfin_get_area_climate_baseline', {
+      sample_urls: ['/x/home/1', '/x/home/2', '/x/home/3'],
+    });
+    expect(Date.now() - start).toBeLessThan(3000);
+    expect(r.isError).toBeFalsy();
+    const parsed = parseToolResult<{
+      available: boolean;
+      sample_count: number;
+      pending?: number;
+      baseline_fire_factor?: number;
+      samples: Array<{ url: string; status?: string; retryable?: boolean }>;
+    }>(r);
+    expect(parsed.available).toBe(true);
+    expect(parsed.sample_count).toBe(2);
+    expect(parsed.baseline_fire_factor).toBe(4);
+    expect(parsed.pending).toBe(1);
+    expect(parsed.samples[1]).toMatchObject({
+      url: 'https://www.redfin.com/x/home/2',
+      status: 'pending',
+      retryable: true,
+    });
+    await deadlineHarness.close();
+  }, 5000);
+
+  it('retries a transient bridge timeout once per sample', async () => {
+    const h = await createTestHarness((server) => registerClimateTools(server, mockClient));
+    let calls = 0;
+    mockFetchHtml.mockImplementation(async () => {
+      calls++;
+      if (calls === 1) {
+        throw new FetchproxyTimeoutError({
+          url: 'https://www.redfin.com/x/home/1',
+          timeoutMs: 30_000,
+        });
+      }
+      return '"fireData":{"fsid":1,"fireFactor":5}';
+    });
+    const r = await h.callTool('redfin_get_area_climate_baseline', {
+      sample_urls: ['/x/home/1', '/x/home/2'],
+    });
+    const parsed = parseToolResult<{ sample_count: number; pending?: number }>(r);
+    expect(parsed.sample_count).toBe(2);
+    expect(parsed.pending).toBeUndefined();
+    expect(calls).toBe(3);
+    await h.close();
+  });
+});
+
 describe('redfin_get_climate_risk_bulk stops issuing fetches after the deadline (fleet-audit #956)', () => {
   it('neither dequeues queued URLs nor retries timed-out in-flight rows once the deadline answered pending', async () => {
     const gate = createFetchGate();

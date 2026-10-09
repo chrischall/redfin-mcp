@@ -24,7 +24,7 @@ This is a "Pattern A" fetchproxy MCP (every call rides through fetchproxy), not 
 | `redfin_resolve_addresses` | `tools/resolve-addresses.ts` | `GET /stingray/do/location-autocomplete?location=…` ×N (≤100, concurrent) → URL/home_id per row | read |
 | `redfin_get_climate_risk` | `tools/climate.ts` | `GET /<homedetails-path>` HTML — extract `floodData`/`fireData`/`heatData` blocks | read |
 | `redfin_get_climate_risk_bulk` | `tools/climate.ts` | per-property climate HTML extract ×N (≤100, concurrent) — preserves order, per-row `available:false` | read |
-| `redfin_get_area_climate_baseline` | `tools/climate.ts` | climate HTML extract over 2–10 sample URLs → averaged baseline + shared `cluster_id` | read |
+| `redfin_get_area_climate_baseline` | `tools/climate.ts` | climate HTML extract over 2–10 sample URLs (concurrent, retry-once, hard deadline → per-row `pending`) → averaged baseline + shared `cluster_id` | read |
 | `redfin_get_comparable_rentals` | `tools/rentals.ts` | `GET /stingray/api/home/comparable-rentals?propertyId=…&rentEstimateLow=…&rentEstimateHigh=…` | read |
 | `redfin_get_saved_homes` | `tools/saved.ts` | (a) `GET /myredfin/favorites` HTML → regex propertyIds<br>(b) `GET /stingray/do/api/v3/favorites/homecards?b=<csv-ids>` — image URLs constructed locally from mlsId+dataSourceId | read (auth) |
 | `redfin_get_saved_searches` | `tools/saved.ts` | `GET /myredfin/saved-searches` HTML → regex region URLs | read (auth) |

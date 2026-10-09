@@ -1,9 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
-import {
-  mapWithConcurrency,
-  retryOnceOnTimeout,
-} from '@chrischall/mcp-utils/fetchproxy';
+import { retryOnceOnTimeout } from '@chrischall/mcp-utils/fetchproxy';
 import { runBoundedBatch } from '@chrischall/mcp-utils';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult } from '../mcp.js';
@@ -310,7 +307,7 @@ const CLIMATE_BULK_CONCURRENCY = 5;
  */
 const CLIMATE_BULK_DEADLINE_MS = 45_000;
 
-/** Tuning knobs; tests inject a tiny `overallDeadlineMs`. */
+/** Tuning knobs (bulk + area baseline); tests inject a tiny `overallDeadlineMs`. */
 export interface ClimateTuning {
   overallDeadlineMs?: number;
 }
@@ -384,6 +381,38 @@ async function fetchOneClimate(
   }
 }
 
+/**
+ * Fan `urls` out under the shared overall deadline: retry-once-on-timeout
+ * per row, and any row still unsettled when the deadline fires comes back
+ * as a retryable `pending` row instead of the whole call dying with -32001
+ * and losing every completed row (fleet-audit #221 for the bulk tool,
+ * #1093 for the area baseline).
+ */
+function fetchClimateBatch(
+  client: RedfinClient,
+  urls: string[],
+  deadlineMs: number,
+  toolName: string
+): Promise<PerPropertyClimateResult[]> {
+  return runBoundedBatch<string, PerPropertyClimateResult>(
+    urls,
+    (u, signal) => fetchOneClimate(client, u, { retryOnTimeout: true, signal }),
+    {
+      deadlineMs,
+      concurrency: CLIMATE_BULK_CONCURRENCY,
+      onTimeout: (u) => ({
+        url: normalizeClimateUrl(u),
+        status: 'pending',
+        retryable: true,
+        error:
+          `${toolName} overall deadline reached before this URL settled — ` +
+          'the request is still pending (likely a slow/hung page fetch). ' +
+          'Re-run just the pending URLs.',
+      }),
+    }
+  );
+}
+
 export function registerClimateTools(
   server: McpServer,
   client: RedfinClient,
@@ -440,23 +469,11 @@ export function registerClimateTools(
       }),
     },
     async ({ urls }) => {
-      const results = await runBoundedBatch<string, PerPropertyClimateResult>(
+      const results = await fetchClimateBatch(
+        client,
         urls,
-        (u, signal) =>
-          fetchOneClimate(client, u, { retryOnTimeout: true, signal }),
-        {
-          deadlineMs: bulkDeadlineMs,
-          concurrency: CLIMATE_BULK_CONCURRENCY,
-          onTimeout: (u) => ({
-            url: normalizeClimateUrl(u),
-            status: 'pending',
-            retryable: true,
-            error:
-              'climate_risk_bulk overall deadline reached before this URL settled — ' +
-              'the request is still pending (likely a slow/hung page fetch). ' +
-              'Re-run just the pending URLs.',
-          }),
-        }
+        bulkDeadlineMs,
+        'climate_risk_bulk'
       );
       const pending = results.filter((r) => r.status === 'pending').length;
       // #53 cluster grouping: surface a `cluster_summary` so callers
@@ -487,7 +504,7 @@ export function registerClimateTools(
     {
       title: 'Sample climate baseline for an area by pulling a few addresses',
       description:
-        "Fetch climate risk for a small set of representative URLs in an area, then return their averaged baseline values plus the shared cluster_id when present. Use this as a cheap area-level read BEFORE fanning out a per-property call: if all sample properties agree (same cluster_id, same fire/flood/heat factors), the baseline applies to the whole cluster and N redundant fetches are avoidable. Pass 2–10 URLs you believe represent the area; returns the aggregate plus the per-URL responses for transparency. Limitations of the per-property tool apply (no landslide coverage — note documented in the per-property tool description).",
+        "Fetch climate risk for a small set of representative URLs in an area, then return their averaged baseline values plus the shared cluster_id when present. Use this as a cheap area-level read BEFORE fanning out a per-property call: if all sample properties agree (same cluster_id, same fire/flood/heat factors), the baseline applies to the whole cluster and N redundant fetches are avoidable. Pass 2–10 URLs you believe represent the area; returns the aggregate plus the per-URL responses for transparency. Server-side concurrency (~5 fetches in flight) with retry-once-on-timeout per URL; the whole call is bounded by an overall deadline, and any sample still unsettled then comes back as `status: \"pending\"` (retryable) with a `pending` count and is left out of the averages. Limitations of the per-property tool apply (no landslide coverage — note documented in the per-property tool description).",
       annotations: {
         title: 'Sample climate baseline for an area by pulling a few addresses',
         readOnlyHint: true,
@@ -503,9 +520,13 @@ export function registerClimateTools(
       }),
     },
     async ({ sample_urls }) => {
-      const results = await mapWithConcurrency(sample_urls, 5, (u) =>
-        fetchOneClimate(client, u)
+      const results = await fetchClimateBatch(
+        client,
+        sample_urls,
+        bulkDeadlineMs,
+        'area_climate_baseline'
       );
+      const pending = results.filter((r) => r.status === 'pending').length;
       const available = results
         .map((r) => r.result)
         .filter((r): r is ClimateRiskReport => !!r && r.available);
@@ -513,6 +534,7 @@ export function registerClimateTools(
         return minifiedResult({
           available: false,
           reason: 'no_first_street_data' as const,
+          ...(pending > 0 ? { pending } : {}),
           samples: results,
         });
       }
@@ -545,6 +567,7 @@ export function registerClimateTools(
         baseline_flood_factor: avg('flood_factor'),
         baseline_heat_factor: avg('heat_factor'),
         not_covered: ['landslide'] as const,
+        ...(pending > 0 ? { pending } : {}),
         samples: results,
       });
     }
