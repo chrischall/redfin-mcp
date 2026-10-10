@@ -39,7 +39,7 @@ import { registerResolveAddressesTools } from './tools/resolve-addresses.js';
 import { createSessionRegistry } from '@chrischall/mcp-utils/session';
 import { registerSessionTools } from './tools/sessions.js';
 
-const VERSION = '1.2.3'; // x-release-please-version
+const VERSION = '1.2.4'; // x-release-please-version
 
 const port = resolveWsPort(readEnvVar('REDFIN_WS_PORT'));
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/chrischall/redfin-mcp/compare/v1.2.3...v1.2.4) (2026-10-10)
+
+
+### Bug Fixes
+
+* **deps:** bump @modelcontextprotocol/server from 2.3.0 to 2.3.1 in the production-dependencies group ([#286](https://github.com/chrischall/redfin-mcp/issues/286)) ([f858bed](https://github.com/chrischall/redfin-mcp/commit/f858bedca3df3fc307f3225f85a981892083b39b))
+
 ## [1.2.3](https://github.com/chrischall/redfin-mcp/compare/v1.2.2...v1.2.3) (2026-10-09)
 
 
