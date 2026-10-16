@@ -1,6 +1,12 @@
 import { z } from 'zod';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute } from 'node:path';
+import { existsSync } from 'node:fs';
+import { extname, isAbsolute, join } from 'node:path';
+import {
+  assertPathWithinRoots,
+  FileWriteRefusedError,
+  resolveOutputDir,
+  writeFileSafe,
+} from '@chrischall/mcp-utils';
 import type { McpServer } from '@modelcontextprotocol/server';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult, unwrapValue as v } from '../mcp.js';
@@ -802,9 +808,9 @@ export function registerSearchTools(
     {
       title: 'Exhaustively sweep a Redfin map area',
       description:
-        "Enumerate EVERY for-sale Redfin listing inside a bounding box without silent truncation. Redfin's gis API returns at most 350 homes per call and ignores server-side filters, so this tool searches drawn-map polygons, recursively quarters any tile that hits the cap, dedupes by property_id and re-applies the caller's filters locally. Homes outside the box and tiles where Redfin drifted to another region are left out. Alternatively pass `zips` (ZIP mode) to sweep a list of ZIP regions instead of map tiles, when Redfin ignores drawn-map polygons. Returns a completeness summary (requests, tiles or ZIPs, unique listings, tiles/ZIPs still at the cap, drift warnings) plus the listings inline by default; pass the optional `output_path` to write them to a new JSON file instead, for large areas. Sequential requests with a delay. Read-only against Redfin; the only write is the optional local output file.",
+        "Enumerate EVERY for-sale Redfin listing inside a bounding box without silent truncation. Redfin's gis API returns at most 350 homes per call and ignores server-side filters, so this tool searches drawn-map polygons, recursively quarters any tile that hits the cap, dedupes by property_id and re-applies the caller's filters locally. Homes outside the box and tiles where Redfin drifted to another region are left out. Alternatively pass `zips` (ZIP mode) to sweep a list of ZIP regions instead of map tiles, when Redfin ignores drawn-map polygons. Returns a completeness summary (requests, tiles or ZIPs, unique listings, tiles/ZIPs still at the cap, drift warnings) plus the listings inline by default; pass the optional `output_path` to write them to a new JSON file instead, for large areas (inside the output directory: REDFIN_OUTPUT_DIR, default ~/Downloads/redfin-mcp). Sequential requests with a delay. Read-only against Redfin; the only write is the optional local output file.",
       // destructiveHint: false — read-only against Redfin; the only write is
-      // the optional local output_path, which must be a NEW absolute file
+      // the optional local output_path, which must be a NEW .json file inside REDFIN_OUTPUT_DIR
       // (existing files are refused and the write uses flag 'wx'), so no
       // prior state is ever lost. Purely additive.
       annotations: { title: 'Sweep Redfin area', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
@@ -827,7 +833,7 @@ export function registerSearchTools(
         max_depth: z.number().int().min(0).max(8).optional().describe('Max quarterings per tile (default 6).'),
         delay_ms: z.number().int().min(0).max(10000).optional().describe('Pause between requests (default 1200).'),
         max_requests: z.number().int().positive().max(400).optional().describe('Hard request budget (default 120).'),
-        output_path: z.string().optional().describe('Optional absolute path of a NEW JSON file to write the full results (and per-tile counts) to; a relative path or an existing file is refused rather than overwritten. Omit to get the results inline; use a file for large areas so the listings stay out of the conversation.'),
+        output_path: z.string().optional().describe('Optional NEW .json file to write the full results (and per-tile counts) to: a file name (e.g. "san-jose.json") written into the output directory (REDFIN_OUTPUT_DIR, default ~/Downloads/redfin-mcp), or an absolute path inside it. Paths outside that directory are refused, and an existing file is never overwritten. Omit to get the results inline; use a file for large areas so the listings stay out of the conversation.'),
       }),
     },
     async (input) => minifiedResult(await sweepRedfinArea(client, input))
@@ -849,36 +855,61 @@ export interface RedfinSweepInput {
   output_path?: string;
 }
 
-/**
- * Refuse an output_path that is relative or already exists, before any
- * request is sent — a relative path would land wherever the server's cwd
- * happens to be, and an existing file may be someone's earlier sweep.
- */
-export function assertSweepOutputPath(path: string | undefined): void {
-  if (path === undefined) return;
-  if (!isAbsolute(path)) {
-    throw new Error(`redfin_sweep_area: output_path must be an absolute path (got "${path}").`);
-  }
-  if (existsSync(path)) {
-    throw new Error(`redfin_sweep_area: output_path "${path}" already exists — refusing to overwrite it. Pass a new file name, or delete the old file first.`);
-  }
+/** Env var naming the directory sweep output files are confined to. */
+export const SWEEP_OUTPUT_DIR_ENV = 'REDFIN_OUTPUT_DIR';
+
+/** A sweep's confined output file and the root it must stay inside. */
+export interface SweepOutput {
+  path: string;
+  root: string;
 }
 
-/** Write a sweep's full result set; 'wx' keeps a file created mid-sweep safe too. */
-function writeSweepFile(path: string, data: unknown): void {
-  mkdirSync(dirname(path), { recursive: true });
+/**
+ * Confine a model-supplied output_path before any request is sent
+ * (fleet-audit#1322): it must be a `.json` file, resolves against the
+ * operator's output directory (`REDFIN_OUTPUT_DIR`, default
+ * `~/Downloads/redfin-mcp` — never the cwd), must stay inside it through
+ * symlinks, and must not already exist (an existing file may be someone's
+ * earlier sweep).
+ */
+export function resolveSweepOutputPath(path: string | undefined): SweepOutput | undefined {
+  if (path === undefined) return undefined;
+  if (extname(path).toLowerCase() !== '.json') {
+    throw new Error(`redfin_sweep_area: output_path must be a .json file (got "${path}").`);
+  }
+  const root = resolveOutputDir(undefined, SWEEP_OUTPUT_DIR_ENV, { name: 'redfin-mcp' });
+  const target = isAbsolute(path) ? path : join(root, path);
   try {
-    writeFileSync(path, JSON.stringify(data, null, 1), { flag: 'wx' });
+    assertPathWithinRoots(target, [root]);
+  } catch {
+    throw new Error(
+      `redfin_sweep_area: output_path "${path}" is outside the output directory ${root}. Pass a file name, or set ${SWEEP_OUTPUT_DIR_ENV} to choose the directory.`
+    );
+  }
+  if (existsSync(target)) {
+    throw new Error(`redfin_sweep_area: output_path "${target}" already exists — refusing to overwrite it. Pass a new file name, or delete the old file first.`);
+  }
+  return { path: target, root };
+}
+
+/**
+ * Write a sweep's full result set with an exclusive, no-follow create inside
+ * the confined root, so a file (or symlink) created mid-sweep is never
+ * clobbered or followed. No parent directories are created.
+ */
+async function writeSweepFile(out: SweepOutput, data: unknown): Promise<void> {
+  try {
+    await writeFileSafe(out.path, Buffer.from(JSON.stringify(data, null, 1)), { allowedRoots: [out.root] });
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw new Error(`redfin_sweep_area: output_path "${path}" was created by something else during the sweep — refusing to overwrite it. Re-run with a new file name.`);
+    if (e instanceof FileWriteRefusedError && e.reason === 'exists') {
+      throw new Error(`redfin_sweep_area: output_path "${out.path}" was created by something else during the sweep — refusing to overwrite it. Re-run with a new file name.`);
     }
     throw e;
   }
 }
 
 export async function sweepRedfinArea(client: RedfinClient, input: RedfinSweepInput) {
-  assertSweepOutputPath(input.output_path);
+  const output = resolveSweepOutputPath(input.output_path);
   if (input.zips && input.zips.length > 0) return sweepRedfinZips(client, input);
   if (!input.bounds) throw new Error('redfin_sweep_area: pass `bounds` (map mode) or `zips` (ZIP mode).');
   const rootBounds = input.bounds;
@@ -963,9 +994,9 @@ export async function sweepRedfinArea(client: RedfinClient, input: RedfinSweepIn
     warnings: [...warnings],
     results: [...byId.values()],
   };
-  if (input.output_path) writeSweepFile(input.output_path, out);
+  if (output) await writeSweepFile(output, out);
   return {
-    ...(input.output_path ? { output_path: input.output_path } : {}),
+    ...(output ? { output_path: output.path } : {}),
     complete: out.complete,
     unique_listings: out.unique_listings,
     raw_seen_leaf_sum: out.raw_seen_leaf_sum,
@@ -978,7 +1009,7 @@ export async function sweepRedfinArea(client: RedfinClient, input: RedfinSweepIn
     drift_tiles: driftTiles,
     budget_hit: budgetHit,
     warnings: out.warnings,
-    ...(input.output_path ? {} : { results: out.results }),
+    ...(output ? {} : { results: out.results }),
   };
 }
 
@@ -989,7 +1020,7 @@ export async function sweepRedfinArea(client: RedfinClient, input: RedfinSweepIn
  * capped and the sweep is marked incomplete.
  */
 export async function sweepRedfinZips(client: RedfinClient, input: RedfinSweepInput) {
-  assertSweepOutputPath(input.output_path);
+  const output = resolveSweepOutputPath(input.output_path);
   const delay = input.delay_ms ?? 1200;
   const budget = input.max_requests ?? 120;
   const filt: SearchInput = { location: '', price_min: input.price_min, price_max: input.price_max, beds_min: input.beds_min, baths_min: input.baths_min, home_types: input.home_types };
@@ -1036,9 +1067,9 @@ export async function sweepRedfinZips(client: RedfinClient, input: RedfinSweepIn
     ],
     results: [...byId.values()],
   };
-  if (input.output_path) writeSweepFile(input.output_path, out);
+  if (output) await writeSweepFile(output, out);
   return {
-    ...(input.output_path ? { output_path: input.output_path } : {}),
+    ...(output ? { output_path: output.path } : {}),
     mode: 'zips' as const,
     complete: out.complete,
     unique_listings: out.unique_listings,
@@ -1048,6 +1079,6 @@ export async function sweepRedfinZips(client: RedfinClient, input: RedfinSweepIn
     failed_zips: failed,
     budget_hit: budgetHit,
     warnings: out.warnings,
-    ...(input.output_path ? {} : { results: out.results }),
+    ...(output ? {} : { results: out.results }),
   };
 }

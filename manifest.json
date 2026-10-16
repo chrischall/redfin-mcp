@@ -35,6 +35,7 @@
         "REDFIN_WS_PORT": "${user_config.redfin_ws_port}",
         "REDFIN_COMMUNITIES_FILE": "${user_config.redfin_communities_file}",
         "REDFIN_DEBUG": "${user_config.redfin_debug}",
+        "REDFIN_OUTPUT_DIR": "${user_config.redfin_output_dir}",
         "FETCHPROXY_WS_HOST": "${user_config.fetchproxy_ws_host}",
         "FETCHPROXY_IDENTITY_DIR": "${user_config.fetchproxy_identity_dir}"
       }
@@ -52,6 +53,13 @@
       "title": "Communities file",
       "description": "Override the community vocabulary (JSON string array).",
       "required": false
+    },
+    "redfin_output_dir": {
+      "type": "string",
+      "title": "Output directory",
+      "description": "Directory redfin_sweep_area writes its optional output_path JSON files into (default: ~/Downloads/redfin-mcp). Paths outside it are refused.",
+      "required": false,
+      "sensitive": false
     },
     "redfin_debug": {
       "type": "string",

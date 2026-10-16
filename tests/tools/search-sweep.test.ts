@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RedfinClient } from '../../src/client.js';
@@ -18,7 +18,14 @@ import {
 
 const fetchStingrayJson = vi.fn();
 const client = { fetchStingrayJson } as unknown as RedfinClient;
-beforeEach(() => fetchStingrayJson.mockReset());
+// sweep output is confined to REDFIN_OUTPUT_DIR (fleet-audit#1322).
+let outRoot: string;
+beforeEach(() => {
+  fetchStingrayJson.mockReset();
+  outRoot = mkdtempSync(join(tmpdir(), 'rf-root-'));
+  vi.stubEnv('REDFIN_OUTPUT_DIR', outRoot);
+});
+afterEach(() => vi.unstubAllEnvs());
 
 const box = { north: 37.4, south: 37.2, east: -121.8, west: -122.0 };
 
@@ -71,7 +78,7 @@ describe('sweepRedfinArea', () => {
       .mockResolvedValueOnce({ payload: { homes: [home(5000, 800000, 37.35, -121.95), home(5002, 650000, 37.35, -121.85)] } }) // dup 5000
       .mockResolvedValueOnce({ payload: { homes: [] } })
       .mockResolvedValueOnce({ payload: { homes: [home(5003, 600000, 37.25, -121.85, 1, 1)] } }); // fails beds
-    const out = join(mkdtempSync(join(tmpdir(), 'rf-')), 'r.json');
+    const out = join(outRoot, 'r.json');
     const s = await sweepRedfinArea(client, { bounds: box, price_max: 900000, beds_min: 2, delay_ms: 0, output_path: out });
     expect(s.complete).toBe(true);
     expect(s.split_tiles).toBe(1);
@@ -83,7 +90,7 @@ describe('sweepRedfinArea', () => {
   });
   it('stops and reports incomplete when every polygon shape is ignored', async () => {
     fetchStingrayJson.mockResolvedValue({ payload: { homes: Array.from({ length: 10 }, (_, i) => home(i + 1, 1, 40.7, -74.0)) } });
-    const out = join(mkdtempSync(join(tmpdir(), 'rf-')), 'r.json');
+    const out = join(outRoot, 'r.json');
     const s = await sweepRedfinArea(client, { bounds: box, delay_ms: 0, output_path: out });
     expect(s.complete).toBe(false);
     expect(s.poly_variant).toBeNull();
@@ -111,7 +118,7 @@ describe('sweepRedfinArea', () => {
   });
   it('reports incomplete when the budget runs out', async () => {
     fetchStingrayJson.mockResolvedValue({ payload: { homes: Array.from({ length: REDFIN_GIS_HARD_CAP }, (_, i) => home(i + 1, 1)) } });
-    const out = join(mkdtempSync(join(tmpdir(), 'rf-')), 'r.json');
+    const out = join(outRoot, 'r.json');
     const s = await sweepRedfinArea(client, { bounds: box, delay_ms: 0, max_requests: 3, output_path: out });
     expect(s.complete).toBe(false);
     expect(s.budget_hit).toBe(true);
@@ -159,13 +166,26 @@ describe('sweepRedfinArea — follow-ups from #272', () => {
     expect(f.variant).toBeNull();
     expect(f.truncated).toBe(true);
   });
-  it('rejects a relative output_path before sending any request', async () => {
-    await expect(sweepRedfinArea(client, { bounds: box, delay_ms: 0, output_path: 'out/r.json' })).rejects.toThrow(/absolute/);
-    await expect(sweepRedfinArea(client, { zips: ['95133'], delay_ms: 0, output_path: 'r.json' })).rejects.toThrow(/absolute/);
+  it('writes a bare file name into the REDFIN_OUTPUT_DIR root (fleet-audit#1322)', async () => {
+    fetchStingrayJson.mockResolvedValue({ payload: { homes: [] } });
+    const s = await sweepRedfinArea(client, { zips: ['95133'], delay_ms: 0, output_path: 'r.json' });
+    expect(s.output_path).toBe(join(outRoot, 'r.json'));
+    expect(existsSync(join(outRoot, 'r.json'))).toBe(true);
+  });
+  it('refuses a path outside the output root before sending any request (fleet-audit#1322)', async () => {
+    const elsewhere = mkdtempSync(join(tmpdir(), 'rf-elsewhere-'));
+    await expect(sweepRedfinArea(client, { bounds: box, delay_ms: 0, output_path: join(elsewhere, 'r.json') })).rejects.toThrow(/output directory/);
+    await expect(sweepRedfinArea(client, { zips: ['95133'], delay_ms: 0, output_path: '../../r.json' })).rejects.toThrow(/output directory/);
+    expect(existsSync(join(elsewhere, 'r.json'))).toBe(false);
+    expect(fetchStingrayJson).not.toHaveBeenCalled();
+  });
+  it('requires a .json file name (fleet-audit#1322)', async () => {
+    await expect(sweepRedfinArea(client, { bounds: box, delay_ms: 0, output_path: join(outRoot, '.zshenv') })).rejects.toThrow(/\.json/);
+    await expect(sweepRedfinArea(client, { zips: ['95133'], delay_ms: 0, output_path: 'r.sh' })).rejects.toThrow(/\.json/);
     expect(fetchStingrayJson).not.toHaveBeenCalled();
   });
   it('refuses to overwrite an existing output_path', async () => {
-    const out = join(mkdtempSync(join(tmpdir(), 'rf-')), 'r.json');
+    const out = join(outRoot, 'r.json');
     writeFileSync(out, 'keep me');
     await expect(sweepRedfinArea(client, { bounds: box, delay_ms: 0, output_path: out })).rejects.toThrow(/already exists/);
     expect(fetchStingrayJson).not.toHaveBeenCalled();

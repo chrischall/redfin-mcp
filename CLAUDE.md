@@ -124,6 +124,7 @@ Optional:
 REDFIN_WS_PORT=37149                            # override the fetchproxy WebSocket port
 REDFIN_COMMUNITIES_FILE=/path/to/communities.json  # override community vocabulary (JSON string array)
 REDFIN_DEBUG=1                                  # verbose fetchproxy transport logging to stderr
+REDFIN_OUTPUT_DIR=/path                         # where redfin_sweep_area writes output_path files (default ~/Downloads/redfin-mcp; outside paths refused)
 ```
 
 ## Conventions
