@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.5](https://github.com/chrischall/redfin-mcp/compare/v1.2.4...v1.2.5) (2026-10-16)
+
+
+### Bug Fixes
+
+* **plugin:** launch the published package so marketplace installs start ([#291](https://github.com/chrischall/redfin-mcp/issues/291)) ([abe7263](https://github.com/chrischall/redfin-mcp/commit/abe7263a2cb81cba2522be45c0a5b33c70c6bd6c))
+* **sweep:** confine sweep_area output to REDFIN_OUTPUT_DIR and resolve pasted full addresses ([#288](https://github.com/chrischall/redfin-mcp/issues/288)) ([b7d9d25](https://github.com/chrischall/redfin-mcp/commit/b7d9d255bcedfb5d081ae100c76ee0c516cbf667))
+
 ## [1.2.4](https://github.com/chrischall/redfin-mcp/compare/v1.2.3...v1.2.4) (2026-10-10)
 
 
