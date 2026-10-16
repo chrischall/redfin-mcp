@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult } from '../mcp.js';
-import { resolveAddressWithFallbacks } from '../resolve.js';
+import { resolveAddressWithFallbacks, splitStreetLocality } from '../resolve.js';
 
 /**
  * `redfin_get_by_address`: resolve a free-text address to a Redfin
@@ -58,12 +58,15 @@ export function registerGetByAddressTools(
       // call this same helper so the fallback strategy stays in sync.
       // See issue #71 (parity audit) and #75 (search-fallback rung).
       const { match, attempts, matchedVariant, matchedVia } =
-        await resolveAddressWithFallbacks(client, {
-          street: input.address,
-          city: input.city,
-          state: input.state,
-          zip: input.zip,
-        });
+        await resolveAddressWithFallbacks(
+          client,
+          splitStreetLocality({
+            street: input.address,
+            city: input.city,
+            state: input.state,
+            zip: input.zip,
+          })
+        );
       const query = attempts[0] ?? input.address;
       if (!match) {
         return minifiedResult({

@@ -14,6 +14,7 @@ import { minifiedResult } from '../mcp.js';
 import {
   createLocalityPoolCache,
   resolveAddressWithFallbacks,
+  splitStreetLocality,
   type LocalityPoolCache,
 } from '../resolve.js';
 
@@ -128,13 +129,14 @@ function inputToParts(input: AddressInput): {
   state?: string;
   zip?: string;
 } {
-  if (typeof input === 'string') return { street: input };
-  return {
+  // fleet-audit#1321: split a pasted full address into street + locality.
+  if (typeof input === 'string') return splitStreetLocality({ street: input });
+  return splitStreetLocality({
     street: input.street,
     city: input.city,
     state: input.state,
     zip: input.zip,
-  };
+  });
 }
 
 async function resolveOne(
