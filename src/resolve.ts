@@ -22,7 +22,7 @@
  *      provided. Round-3 corpus showed mountain MLS addresses
  *      autocomplete is blind to but gis search has indexed.
  */
-import { addressMatch } from '@chrischall/realty-core';
+import { addressMatch, parseAddress } from '@chrischall/realty-core';
 import type { RedfinClient } from './client.js';
 import { throwIfAborted } from './deadline.js';
 import {
@@ -45,6 +45,26 @@ export interface AddressParts {
   city?: string;
   state?: string;
   zip?: string;
+}
+
+/**
+ * A model often pastes the whole address into the street field
+ * ("158 Raven Blvd, Lake Lure, NC 28746"). Split a comma-separated one with
+ * realty-core's `parseAddress` so the street line is matched on its own and
+ * the parsed city / state / ZIP fill any field the caller left empty — the
+ * search-fallback rung needs a locality to bound its gis search
+ * (fleet-audit#1321). A field the caller gave always wins; street-only and
+ * comma-less inputs pass through unchanged.
+ */
+export function splitStreetLocality(parts: AddressParts): AddressParts {
+  if (!parts.street.includes(',')) return parts;
+  const parsed = parseAddress(parts.street);
+  if (!parsed.address) return parts;
+  const out: AddressParts = { ...parts, street: parsed.address };
+  if (!parts.city && parsed.city) out.city = parsed.city;
+  if (!parts.state && parsed.state) out.state = parsed.state;
+  if (!parts.zip && parsed.zip) out.zip = parsed.zip;
+  return out;
 }
 
 /** Which rung surfaced the match. */

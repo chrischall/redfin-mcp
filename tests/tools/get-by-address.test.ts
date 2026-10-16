@@ -570,3 +570,68 @@ describe('redfin_get_by_address tool', () => {
     expect(mockFetchStingrayJson).toHaveBeenCalledTimes(1);
   });
 });
+
+// fleet-audit#1321: a full address pasted into `address` must still resolve
+// through the search-fallback rung, which gates gis rows (street line only)
+// with realty-core's addressMatch.
+describe('redfin_get_by_address — full address in `address` (fleet-audit#1321)', () => {
+  const lakeLureFallback = (streetLine: string, propertyId: number) =>
+    mockFetchStingrayJson.mockImplementation(async (path: string) => {
+      if (path.startsWith('/stingray/do/location-autocomplete')) {
+        const q = decodeURIComponent((/location=([^&]+)/.exec(path)?.[1] ?? '').replace(/\+/g, ' '));
+        if (q === 'Lake Lure NC') {
+          return {
+            resultCode: 0,
+            payload: { sections: [{ name: 'Places', rows: [{ id: '2_555', name: 'Lake Lure', subName: 'NC, USA', url: '/city/555/NC/Lake-Lure' }] }] },
+          };
+        }
+        return { resultCode: 0, payload: { sections: [{ name: 'Addresses', rows: [] }] } };
+      }
+      if (path.startsWith('/stingray/api/gis')) {
+        return {
+          resultCode: 0,
+          payload: {
+            serviceRegionName: 'Lake-Lure',
+            homes: [{ propertyId, url: `/NC/Lake-Lure/x-28746/home/${propertyId}`, streetLine: { value: streetLine }, city: 'Lake Lure', state: 'NC', zip: '28746' }],
+          },
+        };
+      }
+      throw new Error(`unexpected path ${path}`);
+    });
+
+  it('setup', async () => {
+    harness ??= await createTestHarness((server) => registerGetByAddressTools(server, mockClient));
+  });
+
+  it('resolves via the search fallback when the locality is also in the separate fields', async () => {
+    lakeLureFallback('158 Raven Blvd', 77001);
+    const result = await harness.callTool('redfin_get_by_address', {
+      address: '158 Raven Blvd, Lake Lure, NC 28746',
+      city: 'Lake Lure',
+      state: 'NC',
+    });
+    const parsed = parseToolResult<{ resolved: boolean; home_id?: string }>(result);
+    expect(parsed.resolved).toBe(true);
+    expect(parsed.home_id).toBe('77001');
+  });
+
+  it('resolves when the locality is ONLY inside `address` (parsed into city/state/zip)', async () => {
+    lakeLureFallback('158 Raven Blvd', 77001);
+    const result = await harness.callTool('redfin_get_by_address', {
+      address: '158 Raven Blvd, Lake Lure, NC 28746',
+    });
+    const parsed = parseToolResult<{ resolved: boolean; home_id?: string }>(result);
+    expect(parsed.resolved).toBe(true);
+    expect(parsed.home_id).toBe('77001');
+  });
+
+  it('still rejects a different house number', async () => {
+    lakeLureFallback('160 Raven Blvd', 77002);
+    const result = await harness.callTool('redfin_get_by_address', {
+      address: '158 Raven Blvd, Lake Lure, NC 28746',
+    });
+    const parsed = parseToolResult<{ resolved: boolean; home_id?: string }>(result);
+    expect(parsed.home_id).not.toBe('77002');
+    expect(parsed.resolved).toBe(false);
+  });
+});

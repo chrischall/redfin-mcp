@@ -29,6 +29,12 @@
           "format": "filepath"
         },
         {
+          "name": "REDFIN_OUTPUT_DIR",
+          "description": "Directory redfin_sweep_area writes its optional output_path JSON files into (default ~/Downloads/redfin-mcp); paths outside it are refused.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
           "name": "REDFIN_DEBUG",
           "description": "Set to 1 for verbose fetchproxy transport logging to stderr.",
           "isRequired": false,

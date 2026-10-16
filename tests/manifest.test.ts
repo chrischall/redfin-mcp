@@ -65,4 +65,12 @@ describe('manifest.json tool list', () => {
     expect(listed).toEqual(registered);
     for (const t of manifest.tools) expect(t.description.length).toBeGreaterThan(10);
   });
+
+  // fleet-audit#1394: the skill is how a model discovers the cheap bulk
+  // tools; every served tool must be named in it.
+  it('skills/redfin/SKILL.md names every registered tool', () => {
+    const skill = readFileSync(join(ROOT, 'skills', 'redfin', 'SKILL.md'), 'utf8');
+    const missing = manifest.tools.map((t) => t.name).filter((n) => !skill.includes(`\`${n}`));
+    expect(missing).toEqual([]);
+  });
 });

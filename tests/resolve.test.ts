@@ -935,3 +935,29 @@ describe('resolveAddressWithFallbacks — per-locality pool cache', () => {
     expect(countCalls(/\/stingray\/api\/gis/)).toBe(2);
   });
 });
+
+describe('splitStreetLocality (fleet-audit#1321)', () => {
+  it('moves the locality of a comma-separated full address into the missing fields', async () => {
+    const { splitStreetLocality } = await import('../src/resolve.js');
+    expect(splitStreetLocality({ street: '158 Raven Blvd, Lake Lure, NC 28746' })).toEqual({
+      street: '158 Raven Blvd',
+      city: 'Lake Lure',
+      state: 'NC',
+      zip: '28746',
+    });
+  });
+  it('never overrides a field the caller gave', async () => {
+    const { splitStreetLocality } = await import('../src/resolve.js');
+    expect(splitStreetLocality({ street: '158 Raven Blvd, Lake Lure, NC 28746', city: 'Rutherfordton' })).toMatchObject({
+      street: '158 Raven Blvd',
+      city: 'Rutherfordton',
+      state: 'NC',
+      zip: '28746',
+    });
+  });
+  it('leaves a street-only or comma-less input untouched', async () => {
+    const { splitStreetLocality } = await import('../src/resolve.js');
+    expect(splitStreetLocality({ street: '158 Raven Blvd', city: 'Lake Lure' })).toEqual({ street: '158 Raven Blvd', city: 'Lake Lure' });
+    expect(splitStreetLocality({ street: '158 Raven Blvd Lake Lure NC 28746' })).toEqual({ street: '158 Raven Blvd Lake Lure NC 28746' });
+  });
+});
