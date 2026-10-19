@@ -4,6 +4,19 @@ slug: redfin
 summary: >-
   Redfin real-estate access for Claude — search listings, fetch property
   details, market reports, saved homes
+examples:
+  - prompt: >-
+      Find 3-bedroom houses for sale in Asheville, NC under $500,000 and list
+      the five with the most square footage.
+    note: Searches active for-sale Redfin listings.
+  - prompt: >-
+      How is the Denver housing market doing? Compare the median sale price
+      and sale-to-list ratio to last year.
+    note: Uses Redfin's market report for the region.
+  - prompt: >-
+      For this Redfin home link, show its price history and its flood and
+      wildfire risk scores.
+    note: Works from a Redfin home URL or a street address.
 #
 # Hosting note (a comment, not user-facing summary text): this is a
 # BROWSER-BRIDGE MCP — it reaches its site through the user's signed-in
