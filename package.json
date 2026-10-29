@@ -41,7 +41,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@chrischall/mcp-utils": "^3.0.3",
+    "@chrischall/mcp-utils": "^3.4.0",
     "@chrischall/realty-core": "^0.6.4",
     "@fetchproxy/server": "^3.6.2",
     "@modelcontextprotocol/server": "^2.3.0",
