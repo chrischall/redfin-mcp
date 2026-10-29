@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.6](https://github.com/chrischall/redfin-mcp/compare/v1.2.5...v1.2.6) (2026-10-29)
+
+
+### Bug Fixes
+
+* **deps:** bump @chrischall/mcp-utils from 3.0.3 to 3.3.0 in the production-dependencies group ([#299](https://github.com/chrischall/redfin-mcp/issues/299)) ([058d2c3](https://github.com/chrischall/redfin-mcp/commit/058d2c3395dc166c9164a87cb108e232104ddf67))
+* **deps:** require @chrischall/mcp-utils 3.4.0 ([#300](https://github.com/chrischall/redfin-mcp/issues/300)) ([793b8f1](https://github.com/chrischall/redfin-mcp/commit/793b8f152497d75bb3a5a94a024f58fbd912c30f))
+* **deps:** require the MCP SDK ^2.4.0 that mcp-utils 3.4.0 peer-requires ([#301](https://github.com/chrischall/redfin-mcp/issues/301)) ([d188aba](https://github.com/chrischall/redfin-mcp/commit/d188aba752f2e6786c712195b9abef87fb5b0415))
+
+
+### Documentation
+
+* **mint:** add sample prompts for the public catalog ([#296](https://github.com/chrischall/redfin-mcp/issues/296)) ([a881cb5](https://github.com/chrischall/redfin-mcp/commit/a881cb5c7780714fee2d0969313f799c0915912a))
+
 ## [1.2.5](https://github.com/chrischall/redfin-mcp/compare/v1.2.4...v1.2.5) (2026-10-16)
 
 
