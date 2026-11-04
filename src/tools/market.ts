@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult } from '../mcp.js';
 import { resolveRegion } from '../autocomplete.js';
+import { homeMeta, MARKET_ALIASES } from './hints.js';
 
 /**
  * Redfin market analytics: `GET /stingray/api/region/<region_type>/<region_id>/<property_type>/market-trends`.
@@ -104,6 +105,7 @@ export function registerMarketTools(
     'redfin_get_market_report',
     {
       title: 'Get Redfin market report for a region',
+      _meta: homeMeta('lookup', MARKET_ALIASES),
       description:
         "Market report for a Redfin region: median list/sold prices, $/sqft, sale-to-list ratio, total homes for sale + sold, all with year-over-year and month-over-month change. Provide either (a) `location` — free-text we resolve via autocomplete (best with city names; \"New York\", \"Seattle\"; neighborhoods typically return empty data), or (b) `region_id` + `region_type` directly. `property_type` defaults to 1 (all). Each metric returns `{ label, value, unit, yoy_change_fraction, yoy_direction, mom_change_fraction, mom_direction }`. Read-only; safe to call repeatedly.",
       annotations: {

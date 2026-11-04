@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult, unwrapValue as unwrap } from '../mcp.js';
+import { homeMeta, RENTAL_ALIASES } from './hints.js';
 
 /**
  * Redfin's web app calls `/stingray/api/home/comparable-rentals` from
@@ -169,6 +170,7 @@ export function registerRentalsTools(
     'redfin_get_comparable_rentals',
     {
       title: 'Get comparable rentals near a Redfin property',
+      _meta: homeMeta('lookup', RENTAL_ALIASES),
       description:
         "Find nearby rental comparables for a given property: nearby active rental listings with similar bed/bath/sqft, including monthly rent, distance, and the Redfin URL. Useful for estimating what a property could rent for, or for finding rentals near a home you're considering. Inputs are the rent estimate range + lat/lng + propertyId. `redfin_get_property` supplies property_id, latitude and longitude, but it does not return a rent estimate — take the range from the Redfin property page's rental estimate or another source (e.g. a Zillow rent Zestimate), or pass a deliberately wide range around a known rent. The range is sent to Redfin as a filter, so a wrong or invented range narrows the comps; low must not exceed high.",
       annotations: {

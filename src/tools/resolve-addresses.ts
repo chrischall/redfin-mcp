@@ -17,6 +17,7 @@ import {
   splitStreetLocality,
   type LocalityPoolCache,
 } from '../resolve.js';
+import { homeMeta } from './hints.js';
 
 /**
  * `redfin_resolve_addresses`: batch address-resolution for the
@@ -218,6 +219,7 @@ export function registerResolveAddressesTools(
     'redfin_resolve_addresses',
     {
       title: 'Bulk-resolve street addresses to Redfin URLs + home_ids',
+      _meta: homeMeta('lookup'),
       description:
         "Resolve up to 100 free-text street addresses to Redfin canonical home URLs + home_ids in a single tool call. Each input is either a string (full address) or a structured `{street, city, state, zip}` object. Output preserves input order. Unresolved entries return `resolved: false` without aborting the batch; a transient bridge failure surfaces a distinct retryable `status` (timeout/bridge_down/pending) so it is never mistaken for a genuine no-match. Per-row retry-once-on-timeout, server-side concurrency ~6 in flight. The whole call is bounded by an overall hard deadline: a single slow/hung row never wedges the server — unsettled rows come back with `status: \"pending\"` and a `pending` count so you can re-run just those. Use this when you have a list of properties from another system (Compass, MLS, spreadsheet) and need their Redfin handles for follow-on calls — collapses the typical 6-search-call + 15-resolve flow into one trip.",
       annotations: {

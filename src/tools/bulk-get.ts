@@ -13,6 +13,7 @@ import {
   fetchAndFormatProperty,
   type FormattedProperty,
 } from './properties.js';
+import { homeMeta } from './hints.js';
 
 /**
  * `redfin_bulk_get`: unbounded structured fetch for many properties in
@@ -117,6 +118,7 @@ export function registerBulkGetTools(
     'redfin_bulk_get',
     {
       title: 'Bulk fetch Redfin property records',
+      _meta: homeMeta('lookup'),
       description:
         "Fetch up to 200 Redfin property records in a single tool call. Provide an array of targets, each one of: a `url` (full Redfin homedetails URL or path with the /home/<id> segment), a `property_id` alone (resolved internally by following Redfin's /home/<id> redirect to the canonical listing), or a `property_id`+`listing_id` pair (fastest — skips resolution). Returns the same per-property record shape as `redfin_get_property`, but without a summary table — use `redfin_compare_properties` for that. Per-target errors are captured per-row; a single bad ID does not fail the batch. Server-side concurrency, ~6 in flight at a time, with retry-once-on-timeout per row to absorb transient bridge hiccups. The whole call is bounded by an overall hard deadline: a single slow/hung row never wedges the server — when the deadline is reached any unsettled row is returned with `status: \"pending\"` (retryable) and a `pending` count so you can re-run just those targets. Use this when you have a list of saved homes / candidate properties and need the full structured data for every one of them.",
       annotations: {
