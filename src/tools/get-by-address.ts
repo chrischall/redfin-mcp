@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import type { RedfinClient } from '../client.js';
 import { minifiedResult } from '../mcp.js';
 import { resolveAddressWithFallbacks, splitStreetLocality } from '../resolve.js';
+import { homeMeta } from './hints.js';
 
 /**
  * `redfin_get_by_address`: resolve a free-text address to a Redfin
@@ -31,6 +32,7 @@ export function registerGetByAddressTools(
     'redfin_get_by_address',
     {
       title: 'Resolve an address to its Redfin canonical URL + home_id',
+      _meta: homeMeta('lookup', ['look up an address', 'find this house']),
       description:
         "Resolve a free-text address (with optional city/state/zip) to its Redfin canonical home URL and home_id. Walks a 3-rung ladder: (1) autocomplete as-typed, (2) autocomplete with suffix expansion (Rd ↔ Road, Ln ↔ Lane, etc.), (3) search fallback (#75) — when autocomplete misses entirely and city/state are provided, resolves the locality to a region, fires a bounded gis search, and fuzzy-matches the input street tokens against returned homes. `matched_via` is `'autocomplete'` or `'search_fallback'`. A miss on every rung returns `resolved: false` (with the `attempts` tried) rather than an error; a signed-out session, bridge failure or region mismatch is still reported as an error. Address discrepancies across MLS feeds are common (the `109 vs 169 Overlook Point Ln` cross-MLS case is a regular occurrence) — `redfin_get_property` on the resolved URL surfaces them as `address_alternates[]` (#42). Use this when you have a property address and need its Redfin home_id for follow-on calls (e.g. `redfin_get_property`). Read-only, no auth required.",
       annotations: {

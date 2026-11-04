@@ -7,6 +7,7 @@ import { minifiedResult } from '../mcp.js';
 import { urlToPath } from '../url.js';
 import { DeadlineAbandonedError, throwIfAborted } from '../deadline.js';
 import { InvalidPropertyUrlError } from './properties.js';
+import { homeMeta, CLIMATE_ALIASES } from './hints.js';
 
 /**
  * Redfin's homedetails page server-renders climate risk data from
@@ -423,6 +424,7 @@ export function registerClimateTools(
     'redfin_get_climate_risk',
     {
       title: 'Get Redfin climate risk for a property',
+      _meta: homeMeta('lookup', CLIMATE_ALIASES),
       description: CLIMATE_TOOL_DESCRIPTION,
       annotations: {
         title: 'Get Redfin climate risk for a property',
@@ -452,6 +454,7 @@ export function registerClimateTools(
     'redfin_get_climate_risk_bulk',
     {
       title: 'Bulk-fetch Redfin climate risk for many properties',
+      _meta: homeMeta('lookup', CLIMATE_ALIASES),
       description:
         "Fetch climate risk for up to 100 property URLs in a single call. Same per-property shape as `redfin_get_climate_risk`; output preserves input order. Per-row error capture — properties without First Street data return `{ available: false, reason }` without aborting the batch. Server-side concurrency (~5 fetches in flight) with retry-once-on-timeout per URL. The whole call is bounded by an overall deadline: any URL still unsettled then comes back as `status: \"pending\"` (retryable) with a `pending` count, so re-run just those. Use this when batching ~60-property workflows where climate risk is the dominant cost. Limitations from the per-property tool apply (no landslide coverage).",
       annotations: {
@@ -503,6 +506,7 @@ export function registerClimateTools(
     'redfin_get_area_climate_baseline',
     {
       title: 'Sample climate baseline for an area by pulling a few addresses',
+      _meta: homeMeta('lookup', CLIMATE_ALIASES),
       description:
         "Fetch climate risk for a small set of representative URLs in an area, then return their averaged baseline values plus the shared cluster_id when present. Use this as a cheap area-level read BEFORE fanning out a per-property call: if all sample properties agree (same cluster_id, same fire/flood/heat factors), the baseline applies to the whole cluster and N redundant fetches are avoidable. Pass 2–10 URLs you believe represent the area; returns the aggregate plus the per-URL responses for transparency. Server-side concurrency (~5 fetches in flight) with retry-once-on-timeout per URL; the whole call is bounded by an overall deadline, and any sample still unsettled then comes back as `status: \"pending\"` (retryable) with a `pending` count and is left out of the averages. Limitations of the per-property tool apply (no landslide coverage — note documented in the per-property tool description).",
       annotations: {

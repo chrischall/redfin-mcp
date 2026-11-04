@@ -116,6 +116,22 @@ The other fifteen tools take no `view`, and not for one blanket reason:
   `redfin_get_session_context`** are session bookkeeping: an id and a status.
 - **`redfin_healthcheck`** answers reachability and auth.
 
+## In context groups
+
+Redfin is a member of the **home** group. It has no canonical read and no
+subjects: the saved homes are a snapshot (status and price now, with no
+dates for what changed), the saved searches are search definitions rather
+than their new matches, and every other read needs a place or home the
+person names — so nothing here answers a bare "what's new / due / on at
+home?". A compound ask ("what's on at home, and anything new on Redfin?")
+gets no Redfin line from the group's intent tools; ask a direct question
+instead ("show my saved homes on Redfin", "flood risk for 12 Example St?",
+"what's the housing market doing in Brooklyn?"), which the group routes to
+these lookups by their aliases (saved homes, for sale, price history,
+flood risk, mortgage, …). Every call rides the signed-in redfin.com tab,
+so when the browser is not open the group answers "needs your browser
+open" for Redfin.
+
 ## Trigger examples
 
 - "Find me 2-bedroom condos under $1.5M in Brooklyn on Redfin" → `redfin_search_properties`

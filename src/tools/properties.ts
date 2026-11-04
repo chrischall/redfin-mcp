@@ -27,6 +27,7 @@ import {
   type FormattedTaxEvent,
   type NormalizedEvent,
 } from './history.js';
+import { homeMeta, HOME_ALIASES } from './hints.js';
 
 /**
  * Redfin property details are spread across two endpoints:
@@ -561,6 +562,7 @@ export function registerPropertyTools(
     'redfin_get_property',
     {
       title: 'Get Redfin property details',
+      _meta: homeMeta('lookup', HOME_ALIASES),
       description:
         "Fetch a property's full Redfin record. Provide one of: (a) `url` — full Redfin homedetails URL or path, resolved via the initialInfo endpoint; (b) `property_id` alone — resolved internally by following Redfin's /home/<id> redirect to the canonical listing, then initialInfo; or (c) `property_id` + `listing_id` — fastest, skips resolution and goes straight to aboveTheFold. Returns address, beds/baths, sqft, lot_size (sq ft), year built, price, status, days on market, plus derived fields (lot_size_acres, price_drop_*, hoa_monthly_usd, last_sold_*, tax_annual, extracted_features). lot_size / lot_size_acres are null (never 0) for condos and listings with no public-records lot. `primary_photo_url` is a raw Redfin CDN URL and is dropped on the default `compact` view — pass `view: \"full\"` for it, or use `redfin_get_property_photos` for the whole gallery. The raw marketing description is OMITTED by default — opt in with `include_description: true`. Set `include_price_history: true` to bundle the full price history (and the cross-MCP-normalized `events_normalized` view) inline; set `include_tax_history: true` for `tax_history`. Read-only; safe to call repeatedly.",
       annotations: {

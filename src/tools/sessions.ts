@@ -3,6 +3,7 @@ import {
   registerSessionTools as registerSharedSessionTools,
   type SessionRegistry,
 } from '@chrischall/mcp-utils/session';
+import { homeMeta, withMintMeta } from './hints.js';
 
 /**
  * MCP tool surface for the Redfin session registry.
@@ -29,7 +30,7 @@ export function registerSessionTools(
   server: McpServer,
   registry: SessionRegistry
 ): void {
-  registerSharedSessionTools(withAdditiveSessionWrites(server), registry, {
+  registerSharedSessionTools(withAdditiveSessionWrites(withMintMeta(server, SESSION_HINTS)), registry, {
     prefix: 'redfin',
     serviceLabel: 'Redfin',
     // Nothing in redfin-mcp reads the registry to route a request — every
@@ -41,6 +42,17 @@ export function registerSessionTools(
       'extension is signed into; to read a different account, sign that tab into it.',
   });
 }
+
+/**
+ * Context-group hints for the trio: the registry read is a lookup, and the
+ * two writes touch only the process-local label registry — nothing in the
+ * home group changes — so they are `other`.
+ */
+const SESSION_HINTS = {
+  redfin_get_session_context: homeMeta('lookup'),
+  redfin_register_session: homeMeta('other'),
+  redfin_set_active_session: homeMeta('other'),
+};
 
 /**
  * The two session writes, classified by the inverse test. The shared

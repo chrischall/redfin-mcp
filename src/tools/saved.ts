@@ -4,6 +4,7 @@ import type { RedfinClient } from '../client.js';
 import { minifiedResult, unwrapValue as unwrap } from '../mcp.js';
 import { viewArg, viewResponse } from '../view.js';
 import { redfinPhotoUrl } from './photos.js';
+import { homeMeta, SAVED_HOMES_ALIASES, SAVED_SEARCHES_ALIASES } from './hints.js';
 
 /**
  * Signed-in-user surfaces. Both pages require an authenticated
@@ -213,6 +214,7 @@ export function registerSavedTools(
     'redfin_get_saved_homes',
     {
       title: 'Get my saved (favorited) Redfin homes',
+      _meta: homeMeta('lookup', SAVED_HOMES_ALIASES),
       description:
         "The signed-in user's favorited homes on redfin.com. Returns `{ count, homes }` — each home has address, price, beds/baths, status — plus a `note` when none were found (no favorites vs. a page-scrape miss). Requires the user to be signed in. Read-only; safe to call repeatedly.",
       annotations: {
@@ -264,6 +266,7 @@ export function registerSavedTools(
     'redfin_get_saved_searches',
     {
       title: 'Get my saved Redfin searches',
+      _meta: homeMeta('lookup', SAVED_SEARCHES_ALIASES),
       description:
         "The signed-in user's saved searches on redfin.com, derived from the saved-searches page HTML. Returns `{ count, searches }`; each entry is `{ url, region_segment, display_text }`. Requires the user to be signed in. When none are found, `searches` is empty and a `note` explains it may be no saved searches or a page-scrape miss. Read-only; safe to call repeatedly.",
       annotations: {

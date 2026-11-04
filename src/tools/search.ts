@@ -13,6 +13,7 @@ import { minifiedResult, unwrapValue as v } from '../mcp.js';
 import { resolveBoth, type RedfinAddress } from '../autocomplete.js';
 import { buildPortalUrlHyperlink, priceDrop } from '../derived.js';
 import { extractZipFromLocation, homesMatchZipState } from '../geo.js';
+import { homeMeta, FOR_SALE_ALIASES } from './hints.js';
 
 /**
  * Redfin's search API: `GET /stingray/api/gis?...&region_id=X&region_type=Y`
@@ -599,6 +600,7 @@ export function registerSearchTools(
     'redfin_search_properties',
     {
       title: 'Search Redfin listings',
+      _meta: homeMeta('lookup', FOR_SALE_ALIASES),
       description:
         "Search Redfin listings by location (city, ZIP, neighborhood, or full street address) and optional filters. Resolves the location via Redfin's autocomplete then queries the gis API; full street addresses short-circuit to the single matched home (no gis call). Returns matching properties with price, beds/baths, sqft, year built, address, and the Redfin home URL. `resolved_as` is `'region'` / `'address'`. `coverage` is `'full'` (gis indexed this region), `'profile_only'` (Redfin has profiles for individual addresses here but search isn't indexed — use redfin_get_by_address per property), or `'none'`. `result_cap_hit: true` signals the result page is full — gis returned as many rows as requested (`limit`, default 40, max 350) — so more listings likely exist; raise `limit` or narrow with price/beds filters. ZIP queries that fall into Redfin's cross-continent fallback (e.g. ZIP 28746 returning Seattle results) now error loudly. Only `for_sale` status is supported; `sold` / `for_rent` return an error (use redfin_get_comparable_rentals for rentals, redfin_get_market_report for sold-price trends). Read-only; safe to call repeatedly.",
       annotations: {
@@ -807,6 +809,7 @@ export function registerSearchTools(
     'redfin_sweep_area',
     {
       title: 'Exhaustively sweep a Redfin map area',
+      _meta: homeMeta('lookup', FOR_SALE_ALIASES),
       description:
         "Enumerate EVERY for-sale Redfin listing inside a bounding box without silent truncation. Redfin's gis API returns at most 350 homes per call and ignores server-side filters, so this tool searches drawn-map polygons, recursively quarters any tile that hits the cap, dedupes by property_id and re-applies the caller's filters locally. Homes outside the box and tiles where Redfin drifted to another region are left out. Alternatively pass `zips` (ZIP mode) to sweep a list of ZIP regions instead of map tiles, when Redfin ignores drawn-map polygons. Returns a completeness summary (requests, tiles or ZIPs, unique listings, tiles/ZIPs still at the cap, drift warnings) plus the listings inline by default; pass the optional `output_path` to write them to a new JSON file instead, for large areas (inside the output directory: REDFIN_OUTPUT_DIR, default ~/Downloads/redfin-mcp). Sequential requests with a delay. Read-only against Redfin; the only write is the optional local output file.",
       // destructiveHint: false — read-only against Redfin; the only write is

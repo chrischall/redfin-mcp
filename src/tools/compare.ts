@@ -9,6 +9,7 @@ import {
   runPropertyRows,
   type BulkGetTuning,
 } from './bulk-get.js';
+import { homeMeta } from './hints.js';
 
 /**
  * Side-by-side comparison of N Redfin properties. Each property goes
@@ -79,6 +80,7 @@ export function registerCompareTools(
     'redfin_compare_properties',
     {
       title: 'Compare multiple Redfin properties side-by-side',
+      _meta: homeMeta('lookup', ['compare homes', 'side by side', 'which is better']),
       description:
         "Fetch and compare 2 to 25 Redfin properties side-by-side. Provide an array of targets, each either a `url` or a `property_id`+`listing_id` pair. Returns the full per-property record (price, beds/baths, sqft, year built, HOA monthly, last sold, derived price-drop, etc.). For >25 properties or workflows that don't need side-by-side analysis use `redfin_bulk_get`. Pass `include_summary: true` for an aligned-by-field `summary` table (default false to save context — the per-row records carry the same data, so emitting both duplicates ~30% of the response weight). Each record's `extracted_features` (lake_front, hot_tub, basement, furnished, dock, community) is always included. The raw marketing description is omitted by default — opt in with `include_description: true`. Errors for individual properties are captured per-row with a `status` (`ok` / `timeout` / `bridge_down` / `protocol` / `pending` / `other`) and `retryable`. Server-side concurrency (~6 in flight) with retry-once-on-timeout per row; the whole call is bounded by an overall deadline, and any row still unsettled then comes back as `status: \"pending\"` (retryable) with a `pending` count.",
       annotations: {

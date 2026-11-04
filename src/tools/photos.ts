@@ -6,6 +6,7 @@ import {
   fetchAndFormatProperty,
   type AboveTheFoldPayload,
 } from './properties.js';
+import { homeMeta } from './hints.js';
 
 /**
  * Redfin property photos live in `aboveTheFold.mediaBrowserInfo.photos[]`.
@@ -138,6 +139,7 @@ export function registerPhotosTools(
     'redfin_get_property_photos',
     {
       title: 'Get Redfin property photo gallery',
+      _meta: homeMeta('lookup', ['photos', 'pictures', 'listing photos']),
       description:
         "The full photo gallery for a Redfin property — every image in mediaBrowserInfo. Each entry returns CDN URLs at multiple sizes (fullscreen, large, medium, lightbox) plus a thumbnail and the photo's caption when set. Provide either `url` (full Redfin homedetails URL or path; we resolve to IDs via initialInfo) or `property_id` + `listing_id` (skip the resolve step). Returns `{ property_id, listing_id, count, photos }`. Off-market or stub listings may return count=0. Read-only; safe to call repeatedly.",
       annotations: {

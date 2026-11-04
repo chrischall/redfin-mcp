@@ -8,6 +8,7 @@ import {
   resolveIds,
   type AboveTheFoldPayload,
 } from './properties.js';
+import { homeMeta, PRICE_HISTORY_ALIASES } from './hints.js';
 
 // Re-exported so existing consumers (and tests) keep importing the shared
 // event taxonomy + mapper from this module. Both now live canonically in
@@ -224,6 +225,7 @@ export function registerHistoryTools(
     'redfin_get_price_history',
     {
       title: 'Get Redfin price history for a property',
+      _meta: homeMeta('lookup', PRICE_HISTORY_ALIASES),
       description:
         "Listing-price events for a property — listings, price changes, pending, sold, etc. Each entry has a date, event description, price, days-on-market at that point, and the data-source attribution (MLS, county records, etc.). Also returns the tax-history series from public records. Provide either `url` or `property_id`+`listing_id`. Read-only; safe to call repeatedly.",
       annotations: {

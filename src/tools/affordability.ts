@@ -6,6 +6,7 @@ import type {
   AffordabilityResult,
 } from '@chrischall/realty-core';
 import { minifiedResult } from '../mcp.js';
+import { homeMeta, withMintMeta, AFFORDABILITY_ALIASES } from './hints.js';
 
 /**
  * Local affordability calculator. The 28/36 DTI math is canonical in
@@ -33,9 +34,8 @@ export function computeAffordability(
 export function registerAffordabilityTools(server: McpServer): void {
   // realty-core's shared registrar (fleet-audit#1090): same schema and DTI
   // bounds redfin had, plus the MAX_LOAN_TERM_YEARS cap.
-  registerAffordabilityTool(server, {
-    z,
-    prefix: 'redfin',
-    toResult: minifiedResult,
-  });
+  registerAffordabilityTool(
+    withMintMeta(server, { redfin_calculate_affordability: homeMeta('other', AFFORDABILITY_ALIASES) }),
+    { z, prefix: 'redfin', toResult: minifiedResult }
+  );
 }

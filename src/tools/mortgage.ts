@@ -6,6 +6,7 @@ import type {
   MortgageBreakdown,
 } from '@chrischall/realty-core';
 import { minifiedResult } from '../mcp.js';
+import { homeMeta, withMintMeta, MORTGAGE_ALIASES } from './hints.js';
 
 /**
  * Local-only mortgage payment calculator. The PITI math is canonical in
@@ -41,7 +42,7 @@ export function registerMortgageTools(server: McpServer): void {
   // realty-core's shared registrar (fleet-audit#1090), canonical shape —
   // redfin's output already was realty-core's `MortgageBreakdown`. Adds
   // the MAX_LOAN_TERM_YEARS cap on `loan_term_years`.
-  registerMortgageTool(server, {
+  registerMortgageTool(withMintMeta(server, { redfin_calculate_mortgage: homeMeta('other', MORTGAGE_ALIASES) }), {
     z,
     prefix: 'redfin',
     shape: 'canonical',
