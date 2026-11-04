@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/chrischall/redfin-mcp/compare/v1.2.6...v1.3.0) (2026-11-04)
+
+
+### Features
+
+* context-group hints, and a _meta wrapper for the shared registrars ([#304](https://github.com/chrischall/redfin-mcp/issues/304)) ([8020436](https://github.com/chrischall/redfin-mcp/commit/802043698bc9e2edd9c8c27110b6b1f1dfbc3314))
+
+
+### Bug Fixes
+
+* **deps:** bump @fetchproxy/server from 3.6.2 to 3.6.3 in the production-dependencies group ([#302](https://github.com/chrischall/redfin-mcp/issues/302)) ([db3e6db](https://github.com/chrischall/redfin-mcp/commit/db3e6dbdffcb7d595b4c16cac35842682ccdcfb0))
+
 ## [1.2.6](https://github.com/chrischall/redfin-mcp/compare/v1.2.5...v1.2.6) (2026-10-29)
 
 
