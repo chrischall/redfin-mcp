@@ -127,6 +127,8 @@ REDFIN_DEBUG=1                                  # verbose fetchproxy transport l
 REDFIN_OUTPUT_DIR=/path                         # where redfin_sweep_area writes output_path files (default ~/Downloads/redfin-mcp; outside paths refused)
 ```
 
+Hosted (mcp-host sets `MCP_DATA_DIR` / `MCP_BLOB_BASE_URL`): `redfin_sweep_area`'s `output_path` never touches the runner's disk — the caller cannot read it. `prepareSweepOutput` opens an `openExportSink` (mcp-utils `/export`) before the first request, keeps only the file name, and the result carries `output_url` / `output_expires_at` / `output_file` (a signed link to `exp/<id>/part-0001.zip`) instead of `output_path`. Hosted with no blob store, `output_path` is refused up front.
+
 ## Conventions
 
 - All tools prefixed `redfin_*`.
