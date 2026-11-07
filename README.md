@@ -126,6 +126,12 @@ npm run build          # tsc --noEmit + esbuild bundle → dist/bundle.js
 npm run dev            # node dist/bundle.js (after build)
 ```
 
+## Upgrading
+
+### next release
+
+- `redfin_sweep_area` with `output_path` on a **hosted** server (mcp-host) no longer writes to the server's disk, which the caller cannot read. The full result set is zipped into the host's blob store and the result carries `output_url` (a signed download link), `output_expires_at` and `output_file` (the JSON file's name inside the zip) instead of `output_path`. A hosted server with no blob store refuses `output_path` before sending any request; omit it to get the listings inline. Local installs are unchanged: `output_path` is still a new `.json` file in `REDFIN_OUTPUT_DIR`, and the result still carries `output_path`.
+
 ## License
 
 MIT
