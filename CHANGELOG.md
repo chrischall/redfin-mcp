@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1](https://github.com/chrischall/redfin-mcp/compare/v1.3.0...v1.3.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **deps:** upgrade @chrischall/mcp-utils to 3.7.2 so uploads carry only the file's bytes ([#307](https://github.com/chrischall/redfin-mcp/issues/307)) ([2c0024c](https://github.com/chrischall/redfin-mcp/commit/2c0024c1c56f5cf3e786bd390bff3474ac7317cb))
+* **sweep:** deliver redfin_sweep_area output as a download link on hosted servers ([#305](https://github.com/chrischall/redfin-mcp/issues/305)) ([e6046ed](https://github.com/chrischall/redfin-mcp/commit/e6046ed0e01a68d8285cafc73fcdd9fce9ca3f9e))
+
 ## [1.3.0](https://github.com/chrischall/redfin-mcp/compare/v1.2.6...v1.3.0) (2026-11-04)
 
 
