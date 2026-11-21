@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2](https://github.com/chrischall/redfin-mcp/compare/v1.3.1...v1.3.2) (2026-11-21)
+
+
+### Bug Fixes
+
+* **deps:** bump @chrischall/mcp-utils from 3.7.2 to 3.9.0 in the production-dependencies group ([#313](https://github.com/chrischall/redfin-mcp/issues/313)) ([6309e91](https://github.com/chrischall/redfin-mcp/commit/6309e918d291cda6afc8fa7c4945df545d307870))
+* **deps:** bump @fetchproxy/server from 3.6.3 to 3.8.0 in the production-dependencies group ([#310](https://github.com/chrischall/redfin-mcp/issues/310)) ([e0c7447](https://github.com/chrischall/redfin-mcp/commit/e0c7447b10f42e3c84f01ab2b07f1f5967aba106))
+
 ## [1.3.1](https://github.com/chrischall/redfin-mcp/compare/v1.3.0...v1.3.1) (2026-11-07)
 
 
